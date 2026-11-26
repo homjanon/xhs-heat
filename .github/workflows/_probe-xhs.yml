@@ -1,7 +1,7 @@
 name: _probe-xhs-cloud
 
-# 临时探测：从 GitHub Actions（Azure 机房 IP）访问小红书，看是否被 IP 层风控拦截。
-# 结论出来后即删除本文件。
+# 临时探测 2：机房 IP 拿到的 HTML 里到底有没有笔记数据（标题/点赞/作者）。
+# 结论出来后删除本文件。
 on:
   workflow_dispatch:
 
@@ -11,29 +11,40 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 8
     steps:
-      - name: 探测小红书各入口
+      - name: 抓页面并解析
         run: |
-          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          probe () {
-            echo "──────── $1"
-            code=$(curl -s -m 20 -L -o /tmp/out.bin -w "%{http_code}" "$1" \
-              -H "User-Agent: $UA" -H "Accept-Language: zh-CN,zh;q=0.9" -H "Referer: https://www.xiaohongshu.com/")
-            size=$(wc -c < /tmp/out.bin)
-            echo "HTTP=$code size=$size"
-            echo "HEAD: $(head -c 220 /tmp/out.bin | tr -d '\n' | tr -c '[:print:]' '.')"
-            grep -o '_waf_\|verify\|验证\|登录\|461\|访问频繁\|安全' /tmp/out.bin | sort | uniq -c | head -5 | sed 's/^/HIT /'
-          }
-          probe "https://www.xiaohongshu.com/explore"
-          probe "https://www.xiaohongshu.com/search_result?keyword=%E5%9F%BA%E9%87%91"
-          echo "──────── API（无签名，预期 406/461，用来看错误体是否是 IP 层拦截）"
-          code=$(curl -s -m 20 -o /tmp/api.bin -w "%{http_code}" -X POST \
-            "https://edith.xiaohongshu.com/api/sns/web/v1/search/notes" \
-            -H "User-Agent: $UA" -H "Content-Type: application/json" \
-            -H "Referer: https://www.xiaohongshu.com/" \
-            -d '{"keyword":"基金","page":1,"page_size":20,"search_id":"x","sort":"general","note_type":0}')
-          echo "API HTTP=$code"
-          echo "BODY: $(head -c 300 /tmp/api.bin | tr -d '\n' | tr -c '[:print:]' '.')"
-          echo "──────── 出口 IP"
-          curl -s -m 10 https://ipinfo.io/json | head -c 300
+          pip install --quiet requests
+          python - <<'PY'
+          import re, json, requests
+          UA=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+          h={"User-Agent":UA,"Accept-Language":"zh-CN,zh;q=0.9","Referer":"https://www.xiaohongshu.com/"}
+
+          def look(name,url):
+              print("="*20,name)
+              r=requests.get(url,headers=h,timeout=25)
+              t=r.text
+              print("HTTP",r.status_code,"len",len(t),"final",r.url[:110])
+              for k in ["__INITIAL_STATE__","noteCard","likedCount","noteId","登录后","验证","461","captcha"]:
+                  print(f"  {k}: {t.count(k)}")
+              m=re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\})\s*</script>",t,re.S)
+              if m:
+                  raw=m.group(1).replace("undefined","null")
+                  try:
+                      st=json.loads(raw)
+                      print("  INITIAL_STATE keys:",list(st)[:14])
+                      blob=json.dumps(st,ensure_ascii=False)
+                      print("  state len",len(blob),"noteId in state:",blob.count('"noteId"'),"likedCount:",blob.count('likedCount'))
+                      for mm in re.finditer(r'"(?:displayTitle|title)"\s*:\s*"([^"]{4,40})"',blob):
+                          print("   title>>",mm.group(1)[:40]); break
+                  except Exception as e:
+                      print("  state parse fail:",e)
+              # 抽样看看有没有笔记链接
+              ids=set(re.findall(r'/explore/([0-9a-f]{24})',t))
+              print("  /explore/ 笔记 id 数:",len(ids), list(ids)[:3])
+
+          look("explore","https://www.xiaohongshu.com/explore")
+          look("search 基金","https://www.xiaohongshu.com/search_result?keyword=%E5%9F%BA%E9%87%91&source=web_explore_feed")
+          PY
