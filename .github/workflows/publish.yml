@@ -20,11 +20,11 @@ on:
         type: choice
         options: [auto, no-llm, reference-only]
       collect:
-        description: "是否先跑小红书采集"
+        description: "是否先跑小红书采集（run=采集，skip=只处理已有 inbox）"
         required: false
-        default: "yes"
+        default: "run"
         type: choice
-        options: [yes, no]
+        options: ["run", "skip"]
 
 permissions:
   contents: write
@@ -56,7 +56,7 @@ jobs:
 
       - name: 小红书采集（云端，cookie 失效会在这里报出来）
         id: collect
-        if: github.event_name == 'workflow_dispatch' && inputs.collect != 'no' && inputs.mode != 'reference-only'
+        if: github.event_name == 'workflow_dispatch' && inputs.collect != 'skip' && inputs.mode != 'reference-only'
         continue-on-error: true
         env:
           XHS_COOKIE: ${{ secrets.XHS_COOKIE }}
@@ -68,7 +68,7 @@ jobs:
           exit $code
 
       - name: 采集结果检查（失败必须显式告警，不许静默）
-        if: github.event_name == 'workflow_dispatch' && inputs.collect != 'no' && inputs.mode != 'reference-only'
+        if: github.event_name == 'workflow_dispatch' && inputs.collect != 'skip' && inputs.mode != 'reference-only'
         run: |
           CODE="${{ steps.collect.outputs.collect_exit }}"
           echo "collect_exit=$CODE"
