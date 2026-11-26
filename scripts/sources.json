@@ -84,7 +84,7 @@
         "qps": 0.5,
         "concurrency": 1,
         "max_pages_per_keyword": 3,
-        "fetch_window": "每日 16:40 Asia/Shanghai（避开盘中与收盘瞬时污染，与 xiaoxu-fear 闸门一致）"
+        "fetch_window": "每日 16:05 Asia/Shanghai（与 douban 16:00 / xiaoxu 16:20 / cmb 16:30 错开）"
       }
     },
     "reference": {
@@ -785,8 +785,8 @@
     "rescore_batch": 30
   },
   "schedule": {
-    "trigger": "本地采集器 16:40 定时 → push inbox → workflow 自动触发；另留 workflow_dispatch 供 CF qdii-dispatch 心跳补跑",
-    "time": "16:40 Asia/Shanghai",
+    "trigger": "CF Worker qdii-dispatch 心跳 → workflow_dispatch（collect=run）；16:05 槽位",
+    "time": "16:05 Asia/Shanghai",
     "use_github_schedule": false,
     "note": "GitHub schedule 实测延迟可达 2h48m，且与手动触发并存会双跑烧额度（ai-radar 踩坑记录），本仓禁止使用"
   },
