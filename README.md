@@ -70,10 +70,26 @@ python scripts/probe_sources.py                      # 探测各源健康
 |---|---|---|
 | `XHS_COOKIE` | ✅ | 小红书登录 cookie；过期需重扫 |
 | `AGNES_API_KEY` | 建议 | 主模型（免费不限量） |
-| `SENSENOVA_API_KEY` | 可选 | 末位兜底 |
-| `GEMINI_API_KEY` | 可选 | 中间备份 |
+| `SENSENOVA_API_KEY` | 可选 | 第一档（polo 指定顺序） |
+| `GEMINI_API_KEY` | 可选 | 末位兜底 |
 
-  三个 LLM Key 全缺也能跑：自动切「词典模式」，榜单照出，只是长尾识别变弱。
+  LLM 链顺序（2026-11-26 指定）：**SenseNova deepseek-flash → Agnes 3.0-flash → Gemini 3.5-flash-lite**。
+  429 只冷却 60 秒后重试，不整轮拉黑；403/404/410 永久跳过；全失败切「词典模式」，榜单照出。
+
+  ⚠️ 实测：商汤这个 key 的 RPM 极紧（每批首调常直接 `RateLimitExceeded.EndpointRPMExceeded`），
+  实际主力大概率是 Agnes。
+
+2.1 **存储上限**（`sources.json` → `storage`）
+
+| 目录 | 保留 | 上限 |
+|---|---|---|
+| `inbox/` 采集件 | 30 天 | 200 MB（超出按最旧优先删） |
+| `docs/data/reports/` | 90 天 | — |
+| `docs/push/` | 90 天 | — |
+| `docs/daily/` | 365 天 | — |
+| `docs/data/agg/` | 400 天 | 热度分位基线，留最长 |
+
+每次发布前自动跑 `scripts/retention.py`；只删白名单目录内的文件，越界直接跳过。
 
 2. **Pages**：Settings → Pages → Source 选 `Deploy from a branch`，分支 `main`，目录 `/docs`。
 
@@ -155,6 +171,7 @@ scripts/
   smoke_test.py     离线冒烟（改配置后必跑）
   probe_sources.py  只读健康探测
   probe_xhs_cloud.py 采集探针（实验用，可随时验证 cookie/IP）
+  retention.py      存储上限与到期清理
   collect_xhs.py    MediaCrawler 本地方案（已弃用，仅备用）
 docs/               看板与产物（Pages 根目录）
 inbox/              每日采集件

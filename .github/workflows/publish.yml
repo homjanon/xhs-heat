@@ -96,6 +96,9 @@ jobs:
             python scripts/fetch_heat.py $DATE_ARG
           fi
 
+      - name: 存储清理（到期/超量，只动 inbox 与产物目录）
+        run: python scripts/retention.py
+
       - name: 提交产物
         run: |
           set -e

@@ -44,19 +44,25 @@ class LLMChain:
                 "reasoning_low": bool(m.get("reasoning_effort_low")),
                 "blocked": not key,        # 无 Key 直接视为不可用
                 "blocked_reason": "" if key else "未配置 %s" % m.get("api_key_env"),
+                "cool_until": 0.0,        # 429 只冷却一阵，不是永久拉黑
             })
         self.calls = 0
         self.errors = []
         self.used = []
+        self.cooldown_s = int((cfg["llm"].get("limits") or {}).get("rate_limit_cooldown_s", 60))
 
     # ------------------------------------------------------------------
     @property
     def available(self):
-        return any(not b["blocked"] for b in self.backends)
+        now = time.time()
+        return any(not b["blocked"] and b.get("cool_until", 0) <= now for b in self.backends)
 
     def status(self):
-        return [{"name": b["name"], "usable": not b["blocked"],
-                 "reason": b["blocked_reason"]} for b in self.backends]
+        now = time.time()
+        return [{"name": b["name"],
+                 "usable": not b["blocked"] and b.get("cool_until", 0) <= now,
+                 "reason": b["blocked_reason"] or ("冷却中" if b.get("cool_until", 0) > now else "")}
+                for b in self.backends]
 
     # ------------------------------------------------------------------
     def chat(self, system, user, max_tokens=4000):
@@ -64,8 +70,12 @@ class LLMChain:
         if not self.available:
             raise Degraded("无可用模型（未配置任何 API Key）")
         last_err = ""
+        now = time.time()
         for b in self.backends:
             if b["blocked"]:
+                continue
+            if b.get("cool_until", 0) > now:
+                last_err = "%s 冷却中（429）" % b["name"]
                 continue
             try:
                 text = self._call_one(b, system, user, max_tokens)
@@ -81,10 +91,11 @@ class LLMChain:
                 last_err = str(e)
                 log("    🚫 %s" % e)
             except _RateLimited as e:
-                b["blocked"] = True
-                b["blocked_reason"] = "429 本轮熔断"
+                # 429 是 RPM 限流：冷却 60s 后允许重试，不整轮拉黑
+                b["cool_until"] = time.time() + self.cooldown_s
+                b["blocked_reason"] = "429 冷却 %ds" % self.cooldown_s
                 last_err = str(e)
-                log("    ⛔ %s 429，本轮熔断" % b["name"])
+                log("    ⛔ %s 429，冷却 %ds（后续批次可重试）" % (b["name"], self.cooldown_s))
             except Exception as e:                      # 瞬时错误：换下一档
                 last_err = "%s: %s" % (b["name"], e)
                 log("    ⚠️ %s" % truncate(last_err, 120))

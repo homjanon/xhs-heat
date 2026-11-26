@@ -587,17 +587,25 @@
     ]
   },
   "llm": {
-    "comment": "模型链逐档降级（ai-radar 机制）：429 当轮熔断不再撞；503/超时下批重试；全失败走硬规则兜底，绝不空窗。端点与 Key 复用 portfolio 三档链。",
+    "comment": "模型链逐档降级（polo 2026-11-26 指定顺序）：SenseNova → Agnes → Gemini。429 当轮熔断不再撞；503/超时换下一档；全失败走词典口径，绝不空窗。",
     "chains": {
       "extract": {
         "purpose": "实体抽取长尾（词典未命中的片段）+ 语境判断",
         "models": [
           {
+            "name": "SenseNova deepseek-flash",
+            "api_url": "https://token.sensenova.cn/v1/chat/completions",
+            "api_key_env": "SENSENOVA_API_KEY",
+            "model": "deepseek-flash",
+            "note": "首位（polo 2026-11-26 指定）：免费但 RPM 紧；reasoning_effort=low 把 12s 压到 2.6s",
+            "reasoning_effort_low": true
+          },
+          {
             "name": "Agnes agnes-3.0-flash",
             "api_url": "https://apihub.agnes-ai.com/v1/chat/completions",
             "api_key_env": "AGNES_API_KEY",
             "model": "agnes-3.0-flash",
-            "note": "免费不限量，首位；关闭内部思考避免挤空可见输出",
+            "note": "第二档：免费不限量；关闭内部思考避免挤空可见输出",
             "thinking_off": true
           },
           {
@@ -605,15 +613,7 @@
             "api_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             "api_key_env": "GEMINI_API_KEY",
             "model": "gemini-3.5-flash-lite",
-            "note": "额度独立，居中备份"
-          },
-          {
-            "name": "SenseNova deepseek-flash",
-            "api_url": "https://token.sensenova.cn/v1/chat/completions",
-            "api_key_env": "SENSENOVA_API_KEY",
-            "model": "deepseek-flash",
-            "note": "免费但 RPM 紧，末位兜底",
-            "reasoning_effort_low": true
+            "note": "末位兜底：额度独立"
           }
         ]
       },
@@ -629,11 +629,12 @@
       "batch_size": 20,
       "timeout_s": 75,
       "min_text_len": 12,
-      "comment": "词典先行后仅长尾进 LLM；单批失败只丢该批，绝不中断整批"
+      "comment": "词典先行后仅长尾进 LLM；单批失败只丢该批，绝不中断整批",
+      "rate_limit_cooldown_s": 60
     },
     "budget": {
       "expected_daily_calls": "词典先行后约 200-400 条长尾，10-20 批",
-      "circuit_breaker": "429 → 本轮跳过该模型；503/超时 → 下批重试；全部模型失败 → 切词典口径并在报告标降级"
+      "circuit_breaker": "429 → 该档冷却 60s 后允许重试（不整轮拉黑）；403/404/410 → 永久跳过；503/超时 → 换下一档；全部失败 → 词典口径"
     }
   },
   "hard_rules": {
@@ -798,5 +799,14 @@
     "qps_limit": 0.5,
     "disclaimer": "聚合公开内容的舆情观察，不构成投资建议，不代表平台官方数据",
     "secrets": "cookie/代理/LLM Key 全走 GitHub Secrets 或环境变量，绝不入仓"
+  },
+  "storage": {
+    "comment": "抓取数据与派生产物的存储上限；超期或超量按「最旧优先」清理，只在项目数据目录内操作",
+    "inbox_days": 30,
+    "inbox_max_mb": 200,
+    "reports_days": 90,
+    "daily_days": 365,
+    "agg_days": 400,
+    "push_days": 90
   }
 }
