@@ -104,10 +104,14 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "无变化，跳过提交"
-          else
-            git commit -m "data: 热度榜 $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
+            exit 0
           fi
+          git commit -m "data: 热度榜 $(date -u +%Y-%m-%dT%H:%MZ)"
+          # 与远端对齐后再推（并发/多触发时避免 non-fast-forward）
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push && break
+            echo "push 失败，第 $i 次重试…"; sleep 5
+          done
 
       - name: 结果摘要
         if: always()
