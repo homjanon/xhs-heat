@@ -587,25 +587,17 @@
     ]
   },
   "llm": {
-    "comment": "模型链逐档降级（polo 2026-11-26 指定顺序）：SenseNova → Agnes → Gemini。429 当轮熔断不再撞；503/超时换下一档；全失败走词典口径，绝不空窗。",
+    "comment": "模型链（polo 2026-11-26 定稿）：Agnes 主力 → Gemini 备份 → SenseNova 末位。429 冷却 60s 后重试；403/404/410 永久跳过；全失败走词典口径。",
     "chains": {
       "extract": {
         "purpose": "实体抽取长尾（词典未命中的片段）+ 语境判断",
         "models": [
           {
-            "name": "SenseNova deepseek-flash",
-            "api_url": "https://token.sensenova.cn/v1/chat/completions",
-            "api_key_env": "SENSENOVA_API_KEY",
-            "model": "deepseek-flash",
-            "note": "首位（polo 2026-11-26 指定）：免费但 RPM 紧；reasoning_effort=low 把 12s 压到 2.6s",
-            "reasoning_effort_low": true
-          },
-          {
             "name": "Agnes agnes-3.0-flash",
             "api_url": "https://apihub.agnes-ai.com/v1/chat/completions",
             "api_key_env": "AGNES_API_KEY",
             "model": "agnes-3.0-flash",
-            "note": "第二档：免费不限量；关闭内部思考避免挤空可见输出",
+            "note": "主力（polo 2026-11-26 决定）：免费不限量；关闭内部思考避免挤空可见输出",
             "thinking_off": true
           },
           {
@@ -613,7 +605,15 @@
             "api_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             "api_key_env": "GEMINI_API_KEY",
             "model": "gemini-3.5-flash-lite",
-            "note": "末位兜底：额度独立"
+            "note": "第二档：额度独立"
+          },
+          {
+            "name": "SenseNova deepseek-flash",
+            "api_url": "https://token.sensenova.cn/v1/chat/completions",
+            "api_key_env": "SENSENOVA_API_KEY",
+            "model": "deepseek-flash",
+            "note": "末位（实测该 key RPM 极紧，每批首调常 429，不适合主力）",
+            "reasoning_effort_low": true
           }
         ]
       },

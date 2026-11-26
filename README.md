@@ -73,11 +73,11 @@ python scripts/probe_sources.py                      # 探测各源健康
 | `SENSENOVA_API_KEY` | 可选 | 第一档（polo 指定顺序） |
 | `GEMINI_API_KEY` | 可选 | 末位兜底 |
 
-  LLM 链顺序（2026-11-26 指定）：**SenseNova deepseek-flash → Agnes 3.0-flash → Gemini 3.5-flash-lite**。
+  LLM 链顺序（2026-11-26 定稿）：**Agnes 3.0-flash → Gemini 3.5-flash-lite → SenseNova deepseek-flash**。
   429 只冷却 60 秒后重试，不整轮拉黑；403/404/410 永久跳过；全失败切「词典模式」，榜单照出。
 
-  ⚠️ 实测：商汤这个 key 的 RPM 极紧（每批首调常直接 `RateLimitExceeded.EndpointRPMExceeded`），
-  实际主力大概率是 Agnes。
+  ⚠️ 实测：商汤这个 key 的 RPM 极紧（`RateLimitExceeded.EndpointRPMExceeded`），
+  故下沉到末位，只在前两档都不可用时兜底。
 
 2.1 **存储上限**（`sources.json` → `storage`）
 
