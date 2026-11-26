@@ -117,6 +117,15 @@
           "enabled": true,
           "weight": "散户人气（个股榜，旁证，不与资产热度直接对照）",
           "note": "2026-11-26 实测 200/967B；emappdata 与 push2 行情接口是不同风控面"
+        },
+        {
+          "id": "ths_hot",
+          "name": "同花顺热榜",
+          "method": "http_json",
+          "url": "https://dq.10jqka.com.cn/fuyao/hot_list_data/out/hot_list/v1/stock?stock_type=a&type=hour&list_type=normal",
+          "enabled": true,
+          "weight": "散户人气（个股级，第二源，可与东财交叉验证）",
+          "note": "2026-11-27 实测 200/100 只，自带名称/热度值/涨跌幅/概念标签/排名变化"
         }
       ],
       "rsshub_instances": [
