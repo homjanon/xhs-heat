@@ -1,0 +1,83 @@
+name: publish
+
+# 触发方式（刻意不用 GitHub schedule，实测延迟可达 2h48m，且与手动触发并存会双跑）：
+#   1) 本地采集器推 inbox/** → 自动处理并发布
+#   2) workflow_dispatch → 手动补跑 / CF Worker qdii-dispatch 心跳
+on:
+  push:
+    paths:
+      - "inbox/**"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "报告日期 YYYY-MM-DD（留空=今天）"
+        required: false
+      mode:
+        description: "运行模式"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, no-llm, reference-only]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Smoke test（配置/词典/prompt 守门，不联网）
+        run: python scripts/smoke_test.py
+
+      - name: 处理并发布
+        env:
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENSENOVA_API_KEY: ${{ secrets.SENSENOVA_API_KEY }}
+        run: |
+          set -e
+          DATE_ARG=""
+          if [ -n "${{ github.event.inputs.date }}" ]; then DATE_ARG="--date ${{ github.event.inputs.date }}"; fi
+          MODE="${{ github.event.inputs.mode }}"
+          if [ "$MODE" = "no-llm" ]; then
+            python scripts/fetch_heat.py $DATE_ARG --no-llm
+          elif [ "$MODE" = "reference-only" ]; then
+            # 只刷新对照车道：无当日采集件时走 stale 兜底
+            python scripts/fetch_heat.py $DATE_ARG
+          else
+            python scripts/fetch_heat.py $DATE_ARG
+          fi
+
+      - name: 提交产物
+        run: |
+          set -e
+          git config user.name  "xhs-heat-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add docs
+          if git diff --cached --quiet; then
+            echo "无变化，跳过提交"
+          else
+            git commit -m "data: 热度榜 $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
+
+      - name: 结果摘要
+        if: always()
+        run: |
+          echo "### 产物" >> $GITHUB_STEP_SUMMARY
+          ls -lh docs/latest.json docs/data/events.json 2>/dev/null >> $GITHUB_STEP_SUMMARY || true

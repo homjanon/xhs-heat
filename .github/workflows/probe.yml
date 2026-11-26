@@ -1,0 +1,39 @@
+name: probe
+
+# 源探测：只读、不消耗 LLM（除非勾选 live_llm）、不影响产物。
+# 每月 1 号自动跑一次（月频对延迟不敏感），也可随时手动。
+on:
+  workflow_dispatch:
+    inputs:
+      live_llm:
+        description: "做一次真实 LLM 调用（消耗额度）"
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: "0 3 1 * *"   # 每月 1 日 11:00 北京
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 探测
+        env:
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SENSENOVA_API_KEY: ${{ secrets.SENSENOVA_API_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.live_llm }}" = "true" ]; then
+            python scripts/probe_sources.py --llm
+          else
+            python scripts/probe_sources.py
+          fi

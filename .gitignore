@@ -1,0 +1,10 @@
+# MediaCrawler 本地副本（30MB，含他人代码，不入仓）
+_mc/
+# 本地密钥（JSON：ENV_NAME -> key），绝不入仓
+.env.local
+__pycache__/
+*.pyc
+_check.js
+.DS_Store
+Thumbs.db
+logs/

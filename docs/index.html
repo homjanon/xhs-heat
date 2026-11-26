@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fbfaf8">
+<title>小红书投资热度雷达</title>
+<style>
+:root{
+  --ink:#1c1f26; --ink2:#3f4652; --ink3:#6b7280; --ink4:#9aa1ab;
+  --line:#e6e8ec; --line2:#f0f1f4;
+  --bg:#fbfaf8; --card:#ffffff;
+  --accent:#9c3b2e; --accent-soft:#f7eeeb;
+  --warn:#8a6116; --warn-soft:#fdf5e6;
+  --ok:#245c47; --ok-soft:#eaf3ef;
+  --blue:#2e4a6b; --blue-soft:#eaeff5;
+  --gray-soft:#f3f4f6;
+  --up:#b3352c; --down:#2f6b4f;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.7; -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+.wrap{max-width:880px;margin:0 auto;padding:0 18px 72px}
+
+/* ---------- header ---------- */
+header{padding:40px 0 18px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.kicker{font-size:11.5px;letter-spacing:.16em;color:var(--accent);font-weight:600}
+h1{font-size:25px;margin:10px 0 6px;font-weight:700;letter-spacing:-.01em}
+h1 small{font-size:13px;color:var(--ink3);font-weight:400;margin-left:8px;letter-spacing:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;color:var(--ink3);font-size:12.5px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:99px;font-size:11.5px;
+  background:var(--gray-soft);color:var(--ink2);border:1px solid transparent}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.bad{background:var(--accent-soft);color:var(--accent)}
+.chip.line{border-color:var(--line);background:#fff}
+
+.banner{margin:16px 0 0;padding:12px 14px;border-radius:8px;font-size:13.5px;
+  background:var(--warn-soft);color:#6b4c10;border-left:3px solid #c99a3a}
+.banner.bad{background:var(--accent-soft);color:#7d2a1f;border-left-color:var(--accent)}
+
+/* ---------- tabs ---------- */
+nav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:22px 0 0;position:sticky;top:0;
+  background:rgba(251,250,248,.94);backdrop-filter:blur(6px);z-index:5}
+nav button{appearance:none;border:0;background:none;padding:11px 13px;font-size:14px;color:var(--ink3);
+  cursor:pointer;border-bottom:2px solid transparent;font-family:inherit}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+nav .spacer{flex:1}
+nav .datepick{display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--ink3)}
+nav .datepick button{border:1px solid var(--line);border-radius:6px;padding:2px 7px;background:#fff;color:var(--ink2);cursor:pointer}
+nav .datepick button:disabled{opacity:.35;cursor:default}
+
+.panel{display:none;padding-top:20px}
+.panel.on{display:block}
+
+/* ---------- section ---------- */
+h2{font-size:15px;margin:26px 0 10px;font-weight:650;letter-spacing:.01em;display:flex;align-items:baseline;gap:8px}
+h2:first-child{margin-top:4px}
+h2 .n{font-size:11.5px;color:var(--ink4);font-weight:400}
+.hint{font-size:12.5px;color:var(--ink3);margin:-4px 0 12px}
+
+/* ---------- leaderboard ---------- */
+.row{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden;
+  transition:border-color .15s}
+.row:hover{border-color:#d6d9df}
+.row-h{display:grid;grid-template-columns:26px 1fr 54px 82px;gap:10px;align-items:center;
+  padding:12px 14px;cursor:pointer}
+.rank{font-size:13px;color:var(--ink4);text-align:center;font-weight:600}
+.rank.top{color:var(--accent)}
+.name{font-size:15px;font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.name .cat{font-size:11px;color:var(--ink4);font-weight:400}
+.dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.dot.double{background:var(--up)}
+.dot.only{background:#2e4a6b}
+.dot.ref{background:#b9bcc4}
+.dot.weak{background:#d9b382}
+.heat{text-align:right;font-size:19px;font-weight:700;letter-spacing:-.02em}
+.heat small{font-size:10.5px;color:var(--ink4);font-weight:400;display:block;line-height:1;letter-spacing:0}
+.trend{font-size:12px;text-align:right;color:var(--ink3);white-space:nowrap}
+.trend.up{color:var(--up)}
+.trend.down{color:var(--down)}
+
+.bar{height:3px;background:var(--line2);position:relative;margin:0 14px}
+.bar i{position:absolute;left:0;top:0;bottom:0;background:var(--ink);opacity:.72;border-radius:0 2px 2px 0}
+
+.intent{display:flex;height:5px;margin:8px 14px 0;border-radius:2px;overflow:hidden;background:var(--line2)}
+.intent span{display:block;height:100%}
+.intent .i-学{background:#b9c6d6}
+.intent .i-买{background:#c98f7e}
+.intent .i-晒{background:#d8b26a}
+.intent .i-愁{background:#8f9aa8}
+.intent .i-广{background:#dcdde1}
+
+.row-b{padding:10px 14px 13px;font-size:12.5px;color:var(--ink2);display:none;border-top:1px dashed var(--line)}
+.row.open .row-b{display:block}
+.kv{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--ink3);margin-bottom:8px}
+.kv b{color:var(--ink2);font-weight:600}
+.notes{list-style:none;margin:0;padding:0}
+.notes li{padding:6px 0;border-top:1px solid var(--line2);display:flex;gap:8px;align-items:baseline}
+.notes li:first-child{border-top:0}
+.notes .t{flex:1;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.notes .m{color:var(--ink4);font-size:11.5px;white-space:nowrap}
+.spark{margin-top:8px}
+
+/* ---------- cards ---------- */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.card .k{font-size:11.5px;color:var(--ink4);margin-bottom:2px}
+.card .v{font-size:15px;font-weight:650}
+.card .s{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.growth{color:var(--up);font-weight:700}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips .c{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:4px 11px;font-size:13px}
+.chips .c i{font-style:normal;color:var(--ink4);font-size:11px;margin-left:5px}
+
+/* ---------- reference ---------- */
+.ref-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.box h3{margin:0 0 8px;font-size:13px;font-weight:650;display:flex;justify-content:space-between;align-items:baseline}
+.box h3 span{font-size:11.5px;color:var(--ink4);font-weight:400}
+.mini{list-style:none;margin:0;padding:0;font-size:12.5px}
+.mini li{display:flex;gap:8px;padding:4px 0;border-top:1px solid var(--line2);color:var(--ink2)}
+.mini li:first-child{border-top:0}
+.mini .r{color:var(--ink4);width:18px;flex:none;text-align:right}
+.mini .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini .u{color:var(--up);font-size:11px}
+.mini .d{color:var(--down);font-size:11px}
+.tagx{font-size:10.5px;padding:0 5px;border-radius:4px;background:var(--blue-soft);color:var(--blue);margin-left:4px}
+
+/* ---------- gates ---------- */
+.gates{display:flex;flex-wrap:wrap;gap:6px}
+.gate{font-size:11.5px;padding:3px 9px;border-radius:6px;background:var(--ok-soft);color:var(--ok)}
+.gate.bad{background:var(--warn-soft);color:var(--warn)}
+
+/* ---------- table ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}
+th{font-size:11.5px;color:var(--ink4);font-weight:600;background:#f7f7f5}
+td.num{text-align:right;white-space:nowrap}
+
+/* ---------- method ---------- */
+.prose{font-size:14px;color:var(--ink2)}
+.prose h3{font-size:14px;margin:20px 0 6px;color:var(--ink)}
+.prose code{background:var(--gray-soft);padding:1px 5px;border-radius:3px;font-size:12.5px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.prose ul{padding-left:20px;margin:8px 0}
+.prose li{margin:5px 0}
+.formula{background:#1c1f26;color:#e9ebee;border-radius:9px;padding:14px 16px;font-size:12.5px;
+  line-height:1.95;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.formula .c{color:#8d97a4}
+
+footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink4);line-height:1.8}
+
+.empty{text-align:center;padding:60px 20px;color:var(--ink3)}
+.empty h2{border:0;justify-content:center}
+
+@media(max-width:640px){
+  body{font-size:14.5px}
+  .wrap{padding:0 13px 60px}
+  h1{font-size:21px}
+  .row-h{grid-template-columns:22px 1fr 46px 66px;gap:8px;padding:11px 12px}
+  .heat{font-size:17px}
+  .cards{grid-template-columns:1fr}
+  .ref-grid{grid-template-columns:1fr}
+  nav{overflow-x:auto}
+  nav .datepick{display:none}
+  .bar,.intent{margin-left:12px;margin-right:12px}
+  .row-b{padding:9px 12px 11px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">XHS · INVESTMENT HEAT RADAR</div>
+  <h1>小红书投资热度雷达<small id="hDate"></small></h1>
+  <div class="meta" id="hMeta"></div>
+  <div id="banner"></div>
+</header>
+
+<nav>
+  <button data-tab="board" aria-selected="true">榜单</button>
+  <button data-tab="events" aria-selected="false">事件库</button>
+  <button data-tab="method" aria-selected="false">口径</button>
+  <div class="spacer"></div>
+  <div class="datepick">
+    <button id="prev" title="上一期">‹</button>
+    <span id="dLabel"></span>
+    <button id="next" title="下一期">›</button>
+  </div>
+</nav>
+
+<!-- ================= 榜单 ================= -->
+<section class="panel on" id="p-board">
+  <h2>总榜 <span class="n">自然笔记口径，热度 0–100</span></h2>
+  <div class="hint" id="boardHint"></div>
+  <div id="board"></div>
+
+  <h2>蹿升 <span class="n">相对前几日基线的讨论量增速</span></h2>
+  <div id="surge"></div>
+
+  <h2>新面孔 <span class="n">首次进入讨论的资产，样本少，只做提示</span></h2>
+  <div id="newcomers"></div>
+
+  <h2>对照车道 <span class="n">回答「小红书热的是平台特性还是全网共振」</span></h2>
+  <div class="hint" id="refHint"></div>
+  <div class="ref-grid">
+    <div class="box">
+      <h3>雪球热帖 <span id="xqMeta"></span></h3>
+      <ul class="mini" id="xqList"></ul>
+    </div>
+    <div class="box">
+      <h3>东财人气榜 <span id="emMeta"></span></h3>
+      <ul class="mini" id="emList"></ul>
+    </div>
+  </div>
+
+  <h2>质量闸门</h2>
+  <div class="gates" id="gates"></div>
+
+  <h2>候选池 <span class="n">词典未命中且高频出现的词，周度人工固化</span></h2>
+  <div class="chips" id="cands"></div>
+</section>
+
+<!-- ================= 事件库 ================= -->
+<section class="panel" id="p-events">
+  <h2>资产事件库 <span class="n">严口径：热度≥80 连续 3 日 / 增速进历史前 5% / 新面孔 7 日内进 Top5</span></h2>
+  <div class="hint">这是唯一无法事后补建的东西：每个热度周期的完整档案（起热时间、峰值、意图结构）。</div>
+  <div id="events"></div>
+</section>
+
+<!-- ================= 口径 ================= -->
+<section class="panel" id="p-method">
+  <div class="prose">
+    <h3>它是什么</h3>
+    <p>每日自动聚合小红书上被讨论最多的投资资产，记录「热到什么程度、在哪个讨论阶段」。<strong>描述型监测：不做预测、不做反向操作、不评判人群、不做回测。</strong></p>
+
+    <h3>热度公式</h3>
+    <div class="formula">Heat = 100 × ( 0.45·V + 0.35·E + 0.20·M )
+  <span class="c">V</span> 讨论量：提及该资产的自然笔记数（营销已剔除；多资产按 1/n 分摊）
+  <span class="c">E</span> 互动量：赞×1 + 藏×3 + 评×2 的对数和；单条贡献上限 10%
+  <span class="c">M</span> 动量：讨论量的 3 日增速，截断到 [-2, +3] 防爆表</div>
+    <p style="margin-top:10px">历史满 8 天后，V/E 改用 <strong>90 日滚动分位数</strong>归一（平台内容总量年增约一倍，绝对值必然虚高）。历史不足时走<strong>冷启动口径</strong>（截面 log 归一、动量取中性 0.5），页头会明确标注 —— 两种口径的数值不能直接比。</p>
+
+    <h3>意图五分类</h3>
+    <p><code>学</code> 科普配置 · <code>买</code> 攻略上车 · <code>晒</code> 晒收益 · <code>愁</code> 亏损求助 · <code>广</code> 疑似营销。只描述讨论阶段，不绑定任何操作含义；营销笔记不进热度分，但占比照常展示（榜单成色由你判断）。</p>
+
+    <h3>双车道标记</h3>
+    <ul>
+      <li><span class="dot double"></span> 双热：小红书与雪球同时提及，多半是全网共振</li>
+      <li><span class="dot only"></span> 独热：只有小红书热，多为生活方式型话题（攒金豆、存金条）</li>
+      <li><span class="dot ref"></span> 对照冷/样本不足：参考车道匹配不到或样本太小</li>
+    </ul>
+    <p>参考车道当前只有「雪球热帖」提供资产级可比口径，单次仅 10 条，因此设有门槛：总提及 &lt;6 或单资产 &lt;2 时不判定，标「参照样本不足」。宁可不判，也不硬猜。</p>
+
+    <h3>合规与口径声明</h3>
+    <ul>
+      <li>只采公开笔记的标题/正文/互动量与发布时间；作者仅存哈希，不存昵称、头像、主页</li>
+      <li>不执行任何互动操作（点赞/关注/私信），全局 QPS ≤0.5，单词 ≤3 页</li>
+      <li>每日 16:40 采集（避开盘中与收盘瞬时流量污染）</li>
+      <li>Cookie 与 API Key 只走本地环境变量 / GitHub Secrets，绝不入仓</li>
+    </ul>
+    <p style="color:var(--ink3);font-size:12.5px" id="methodMeta"></p>
+  </div>
+</section>
+
+<footer>
+  <div id="footNote">聚合公开内容的舆情观察，不构成投资建议，不代表平台官方数据。</div>
+  <div style="margin-top:4px" id="footBuild"></div>
+</footer>
+
+</div>
+
+<script>
+"use strict";
+const $  = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const ESC = (s) => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const INTENTS = ["学","买","晒","愁","广"];
+const LANE = {double_hot:"双热", xhs_only_hot:"独热", reference_only_hot:"对照热", xhs_hot_ref_weak:"参照弱", insufficient:"参照不足"};
+const ARROW = {up:"▲", down:"▼", flat:"─", new:"▲"};
+
+let STATE = {latest:null, dates:[], idx:0, trends:null};
+
+async function boot(){
+  try{
+    const idx = await fetch("data/index.json").then(r=>r.ok?r.json():null).catch(()=>null);
+    STATE.dates = (idx && idx.dates) || [];
+    const latest = await fetch("latest.json?v="+Date.now()).then(r=>r.json());
+    STATE.latest = latest;
+    STATE.idx = Math.max(0, STATE.dates.indexOf(latest.date));
+    STATE.trends = await fetch("data/trends.json").then(r=>r.ok?r.json():null).catch(()=>null);
+    render();
+  }catch(e){
+    $("#board").innerHTML = '<div class="empty"><h2>还没有产出</h2><p>先跑一次 <code>python scripts/fetch_heat.py</code>，或等今天的采集任务。</p></div>';
+    $("#hMeta").innerHTML = '<span class="chip warn">无数据</span>';
+  }
+}
+
+function render(){
+  const d = STATE.latest;
+  $("#hDate").textContent = d.date || "";
+  $("#dLabel").textContent = d.date || "";
+  $("#prev").disabled = STATE.idx >= STATE.dates.length-1;
+  $("#next").disabled = STATE.idx <= 0;
+
+  const st = d.stats || {}, cal = d.caliber || {};
+  const statusChip = d.stale ? '<span class="chip bad">采集中断·沿用上期</span>'
+    : (d.status === "degraded" ? '<span class="chip warn">降级运行</span>' : '<span class="chip ok">正常</span>');
+  const calChip = cal.mode === "bootstrap"
+    ? '<span class="chip line">冷启动口径</span>'
+    : '<span class="chip line">滚动分位</span>';
+  const ext = cal.extract === "dict+llm" ? "词典+LLM" : "词典模式";
+  $("#hMeta").innerHTML = [
+    statusChip, calChip,
+    '<span class="chip line">抽取：'+ESC(ext)+'</span>',
+    '<span class="chip line">有效样本 '+ (st.effective||0) +'</span>',
+    '<span class="chip line">营销 ' + Math.round((st.marketing_ratio||0)*100) + '%</span>',
+    '<span class="chip line">资产 ' + (st.assets||0) + '</span>'
+  ].join("");
+
+  $("#banner").innerHTML = d.stale
+    ? '<div class="banner bad">'+ESC(d.stale_note||"今日采集中断，沿用上一期数据")+'</div>'
+    : (cal.mode==="bootstrap" ? '<div class="banner">冷启动第 '+(cal.history_days+1)+' 天：历史不足 '+cal.min_days_required+' 天，热度用截面归一、动量取中性。此期间数值仅用于排序，不与日后滚动口径比较。</div>' : '');
+
+  $("#boardHint").textContent = "▲ 上升 ≥3 · ▼ 下降 ≥3 · 点开任一行看代表笔记与 60 日曲线";
+  renderBoard(d);
+  renderSurge(d);
+  renderNewcomers(d);
+  renderReference(d);
+  renderGates(d);
+  renderCandidates(d);
+  renderEvents(d);
+  $("#methodMeta").textContent = "本期口径：" + (cal.note||"") + "｜时间窗 " + (cal.window_days||1) + " 天";
+  $("#footNote").textContent = d.disclaimer || "";
+  $("#footBuild").textContent = "生成于 " + (d.generated_at||"").replace("T"," ");
+}
+
+function renderBoard(d){
+  const rows = d.leaderboard || [];
+  if(!rows.length){ $("#board").innerHTML = '<div class="empty">本期无资产入榜</div>'; return; }
+  $("#board").innerHTML = rows.map(r=>{
+    const it = r.intent||{};
+    const seg = INTENTS.map(k=>'<span class="i-'+k+'" style="width:'+((it[k]||0)*100).toFixed(1)+'%"></span>').join("");
+    const lane = r.lane||{};
+    const dotCls = lane.tag==="double_hot"?"double":lane.tag==="xhs_only_hot"?"only":lane.tag==="xhs_hot_ref_weak"?"weak":"ref";
+    const laneTxt = LANE[lane.tag]||"";
+    const tr = r.trend||"flat";
+    const delta = r.delta_heat==null ? "" : (r.delta_heat>0?"+":"")+r.delta_heat;
+    return '<div class="row" data-id="'+ESC(r.id)+'">'
+      + '<div class="row-h">'
+      +   '<div class="rank '+(r.rank<=3?"top":"")+'">'+r.rank+'</div>'
+      +   '<div class="name"><span class="dot '+dotCls+'" title="'+ESC(laneTxt)+'"></span>'+ESC(r.name)
+      +     '<span class="cat">'+ESC(r.category||"")+'</span></div>'
+      +   '<div class="heat">'+r.heat.toFixed(1)+'<small>热度</small></div>'
+      +   '<div class="trend '+tr+'">'+ARROW[tr]+' '+delta+'</div>'
+      + '</div>'
+      + '<div class="bar"><i style="width:'+Math.max(2,Math.min(100,r.heat))+'%"></i></div>'
+      + '<div class="intent" title="学/买/晒/愁/广">'+seg+'</div>'
+      + '<div class="row-b">'
+      +   '<div class="kv">'
+      +     '<span>笔记 <b>'+r.notes+'</b></span>'
+      +     '<span>互动 <b>'+r.raw_engagement+'</b></span>'
+      +     '<span>营销 <b>'+Math.round((r.marketing_share||0)*100)+'%</b></span>'
+      +     '<span>连续在榜 <b>'+r.streak_days+'</b> 天</span>'
+      +     '<span>'+INTENTS.map(k=>k+' '+Math.round((it[k]||0)*100)+'%').join(' · ')+'</span>'
+      +     (lane.tag && lane.tag!=="insufficient" ? '<span>对照 <b>'+laneTxt+'</b>'+(lane.ref_count!=null?'（雪球 '+lane.ref_count+' 次）':'')+'</span>' : '')
+      +   '</div>'
+      +   '<ul class="notes">'+(r.top_notes||[]).map(n=>'<li><span class="t">'+ESC(n.title)+'</span><span class="m">赞'+n.liked+' 藏'+n.collected+' 评'+n.comment+'</span></li>').join("")+'</ul>'
+      +   '<div class="spark" data-spark="'+ESC(r.id)+'"></div>'
+      + '</div></div>';
+  }).join("");
+  $$(".row", $("#board")).forEach(el=>{
+    el.querySelector(".row-h").addEventListener("click", ()=>{
+      const open = el.classList.toggle("open");
+      if(open) drawSpark(el);
+    });
+  });
+}
+
+function drawSpark(el){
+  const id = el.dataset.id;
+  const box = el.querySelector(".spark");
+  const series = (STATE.trends && STATE.trends.series && STATE.trends.series[id]) || [];
+  if(series.length < 2){ box.innerHTML = '<span style="color:var(--ink4);font-size:11.5px">暂无历史曲线（数据积累中）</span>'; return; }
+  const w=520,h=54,pad=3;
+  const vals = series.map(s=>Number(s[1])||0);
+  const max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+  const span = Math.max(1, max-min);
+  const pts = vals.map((v,i)=>{
+    const x = pad + i*(w-2*pad)/Math.max(1,vals.length-1);
+    const y = h-pad - (v-min)/span*(h-2*pad);
+    return x.toFixed(1)+","+y.toFixed(1);
+  }).join(" ");
+  box.innerHTML = '<svg viewBox="0 0 '+w+' '+h+'" width="100%" height="54" preserveAspectRatio="none">'
+    + '<polyline fill="none" stroke="#9c3b2e" stroke-width="1.6" stroke-linejoin="round" points="'+pts+'"/>'
+    + '</svg><div style="font-size:10.5px;color:var(--ink4)">近 '+vals.length+' 期热度 · 高 '+max.toFixed(0)+' / 低 '+min.toFixed(0)+'</div>';
+}
+
+function renderSurge(d){
+  const s = d.surge||[];
+  $("#surge").innerHTML = s.length ? '<div class="cards">'+s.map(x=>
+    '<div class="card"><div class="k">'+ESC(x.name)+'</div>'
+    +'<div class="v growth">+'+Math.round(x.growth*100)+'%</div>'
+    +'<div class="s">'+x.caliber+' · 笔记 '+x.volume+' · 热度 '+x.heat.toFixed(0)+'</div></div>').join("")+'</div>'
+    : '<div class="hint">本期无显著蹿升（需要至少一期历史基线）。</div>';
+}
+
+function renderNewcomers(d){
+  const n = d.newcomers||[];
+  $("#newcomers").innerHTML = n.length
+    ? '<div class="chips">'+n.map(x=>'<span class="c">'+ESC(x.name)+'<i>第'+x.rank+'名 · '+x.notes+' 篇</i></span>').join("")+'</div>'
+    : '<div class="hint">本期无新面孔。</div>';
+}
+
+function renderReference(d){
+  const ref = d.reference||{};
+  const gate = ref.gate||{};
+  const srcs = ref.sources||[];
+  const ok = srcs.filter(s=>s.ok).length;
+  $("#refHint").textContent = gate.passed
+    ? "参考样本 "+gate.matched_total+" 处提及（阈值 "+gate.min_required+"），已启用双热/独热判定。"
+    : (gate.note || (ref.note||"参考车道不可用") ) + " —— 照常展示原始条目，不参与判定。";
+
+  const xq = ref.xueqiu_posts||[];
+  const xqs = srcs.find(s=>s.id==="xueqiu_hots");
+  $("#xqMeta").textContent = xqs ? (xqs.ok ? xqs.items+" 条" : "不可用") : "";
+  $("#xqList").innerHTML = xq.length ? xq.map((p,i)=>
+    '<li><span class="r">'+(i+1)+'</span><span class="n" title="'+ESC(p.title)+'">'+ESC(p.title)
+    +(p.assets&&p.assets.length?'<span class="tagx">'+p.assets.map(ESC).join("/")+'</span>':'')+'</span></li>').join("")
+    : '<li><span class="n" style="color:var(--ink4)">无条目</span></li>';
+
+  const em = ref.em_popularity||[];
+  const ems = srcs.find(s=>s.id==="em_popularity");
+  $("#emMeta").textContent = ems ? (ems.ok ? "Top "+ems.items : "不可用") : "";
+  $("#emList").innerHTML = em.length ? em.slice(0,10).map(x=>{
+    const rc = x.rank_change;
+    const cls = rc>0?"u":(rc<0?"d":"");
+    const txt = rc>0?("↑"+rc):(rc<0?("↓"+Math.abs(rc)):"");
+    return '<li><span class="r">'+x.rank+'</span><span class="n">'+ESC(x.name||x.code)+'</span><span class="'+cls+'">'+txt+'</span></li>';
+  }).join("") : '<li><span class="n" style="color:var(--ink4)">无数据</span></li>';
+}
+
+function renderGates(d){
+  const checks = (d.quality&&d.quality.checks)||[];
+  $("#gates").innerHTML = checks.map(c=>'<span class="gate '+(c.ok?"":"bad")+'" title="'+ESC(c.note||"")+'">'
+    +(c.ok?"✓ ":"⚠ ")+ESC(c.name)+"："+ESC(c.value)+'</span>').join("");
+}
+
+function renderCandidates(d){
+  const c = d.candidates||[];
+  $("#cands").innerHTML = c.length
+    ? c.map(x=>'<span class="c">'+ESC(x.frag)+'<i>'+x.count+'</i></span>').join("")
+    : '<div class="hint">本期无未识别高频词。</div>';
+}
+
+function renderEvents(d){
+  const ev = d.events_recent||[];
+  if(!ev.length){
+    $("#events").innerHTML = '<div class="empty"><h2>事件库还没有记录</h2><p>门槛：热度≥80 连续 3 日 / 单日增速进历史前 5% / 新面孔 7 日内进 Top5。<br>首日不判定 newcomer（第一天全榜都是新面孔，不是事件）。</p></div>';
+    return;
+  }
+  $("#events").innerHTML = '<table><thead><tr><th>资产</th><th class="num">峰值</th><th>起热</th><th class="num">跨度</th><th>入库原因</th></tr></thead><tbody>'
+    + ev.map(e=>'<tr><td><strong>'+ESC(e.name)+'</strong><div style="font-size:11.5px;color:var(--ink4)">'+ESC(e.category||"")+'</div></td>'
+      + '<td class="num">'+Number(e.peak_heat||0).toFixed(0)+'<div style="font-size:11px;color:var(--ink4)">'+ESC(e.peak_date||"")+'</div></td>'
+      + '<td>'+ESC(e.start_date||"")+'</td>'
+      + '<td class="num">'+(e.span_days||1)+' 天</td>'
+      + '<td style="font-size:12px;color:var(--ink2)">'+ESC((e.entry_reasons||[]).join("；"))+'</td></tr>').join("")
+    + '</tbody></table>';
+}
+
+/* 历史浏览 */
+function gotoDate(dir){
+  const ni = STATE.idx + dir;
+  if(ni<0 || ni>=STATE.dates.length) return;
+  const d = STATE.dates[ni];
+  fetch("daily/"+d+".json").then(r=>r.json()).then(j=>{
+    STATE.latest=j; STATE.idx=ni; render();
+    window.scrollTo({top:0,behavior:"smooth"});
+  }).catch(()=>{});
+}
+
+$$("nav button[data-tab]").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    $$("nav button[data-tab]").forEach(x=>x.setAttribute("aria-selected", x===b ? "true":"false"));
+    $$(".panel").forEach(p=>p.classList.remove("on"));
+    $("#p-"+b.dataset.tab).classList.add("on");
+  });
+});
+$("#prev").addEventListener("click", ()=>gotoDate(+1));
+$("#next").addEventListener("click", ()=>gotoDate(-1));
+boot();
+</script>
+</body>
+</html>
