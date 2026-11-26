@@ -133,6 +133,23 @@ h2 .n{font-size:11.5px;color:var(--ink4);font-weight:400}
 .mini .d{color:var(--down);font-size:11px}
 .tagx{font-size:10.5px;padding:0 5px;border-radius:4px;background:var(--blue-soft);color:var(--blue);margin-left:4px}
 
+/* ---------- popularity table ---------- */
+.pop{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pop th{font-size:11px;color:var(--ink4);font-weight:600;text-align:left;padding:8px 9px;
+  background:#f7f7f5;border-bottom:1px solid var(--line);white-space:nowrap}
+.pop td{padding:7px 9px;border-bottom:1px solid var(--line2);vertical-align:middle}
+.pop tr:last-child td{border-bottom:0}
+.pop .nm{font-weight:600;white-space:nowrap}
+.pop .cd{color:var(--ink4);font-size:11px;margin-left:5px;font-weight:400}
+.pop .cc{color:var(--ink3);font-size:11.5px}
+.pop .rk0{color:var(--ink4)}
+.badge{display:inline-block;font-size:10px;padding:0 5px;border-radius:4px;margin-left:5px;
+  background:var(--accent-soft);color:var(--accent);vertical-align:1px}
+.badge.gray{background:var(--gray-soft);color:var(--ink3)}
+.up-pct{color:var(--up)}
+.down-pct{color:var(--down)}
+
 /* ---------- gates ---------- */
 .gates{display:flex;flex-wrap:wrap;gap:6px}
 .gate{font-size:11.5px;padding:3px 9px;border-radius:6px;background:var(--ok-soft);color:var(--ok)}
@@ -199,6 +216,7 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <!-- ================= 榜单 ================= -->
 <section class="panel on" id="p-board">
+  <div id="xhsMain">
   <h2>总榜 <span class="n">自然笔记口径，热度 0–100</span></h2>
   <div class="hint" id="boardHint"></div>
   <div id="board"></div>
@@ -209,24 +227,32 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <h2>新面孔 <span class="n">首次进入讨论的资产，样本少，只做提示</span></h2>
   <div id="newcomers"></div>
 
-  <h2>对照车道 <span class="n">回答「小红书热的是平台特性还是全网共振」</span></h2>
-  <div class="hint" id="refHint"></div>
-  <div class="ref-grid">
-    <div class="box">
-      <h3>雪球热帖 <span id="xqMeta"></span></h3>
-      <ul class="mini" id="xqList"></ul>
-    </div>
-    <div class="box">
-      <h3>东财人气榜 <span id="emMeta"></span></h3>
-      <ul class="mini" id="emList"></ul>
-    </div>
   </div>
 
+  <h2 id="refTitle">参考车道 <span class="n">散户人气 · 双榜交叉验证 · 概念热度</span></h2>
+  <div class="hint" id="refHint"></div>
+  <table class="pop">
+    <thead><tr>
+      <th style="width:30px">#</th><th>名称</th>
+      <th style="width:48px" class="num">东财</th><th style="width:56px" class="num">同花顺</th>
+      <th style="width:60px" class="num">涨幅</th><th>概念</th>
+    </tr></thead>
+    <tbody id="popBody"></tbody>
+  </table>
+
+  <h2>热门概念 <span class="n">两榜个股的概念标签聚合，接近板块级关注度</span></h2>
+  <div class="chips" id="conceptChips"></div>
+
+  <h2>雪球热帖 <span class="n">资产级提及，可作跨车道对照</span></h2>
+  <ul class="mini" id="xqList"></ul>
+
+  <div id="xhsExtra">
   <h2>质量闸门</h2>
   <div class="gates" id="gates"></div>
 
   <h2>候选池 <span class="n">词典未命中且高频出现的词，周度人工固化</span></h2>
   <div class="chips" id="cands"></div>
+  </div>
 </section>
 
 <!-- ================= 事件库 ================= -->
@@ -312,24 +338,34 @@ function render(){
   $("#next").disabled = STATE.idx <= 0;
 
   const st = d.stats || {}, cal = d.caliber || {};
-  const statusChip = d.status === "empty" ? '<span class="chip warn">等待首批数据</span>'
+  const isRefMode = d.status === "reference_only";
+  const statusChip = isRefMode ? '<span class="chip warn">仅参考车道</span>'
+    : d.status === "empty" ? '<span class="chip warn">等待首批数据</span>'
     : (d.stale ? '<span class="chip bad">采集中断·沿用上期</span>'
     : (d.status === "degraded" ? '<span class="chip warn">降级运行</span>' : '<span class="chip ok">正常</span>'));
-  const calChip = cal.mode === "bootstrap"
-    ? '<span class="chip line">冷启动口径</span>'
-    : '<span class="chip line">滚动分位</span>';
+  const calChip = isRefMode ? '<span class="chip line">参考车道口径</span>'
+    : (cal.mode === "bootstrap" ? '<span class="chip line">冷启动口径</span>' : '<span class="chip line">滚动分位</span>');
   const ext = cal.extract === "dict+llm" ? "词典+LLM" : "词典模式";
-  $("#hMeta").innerHTML = [
-    statusChip, calChip,
-    '<span class="chip line">抽取：'+ESC(ext)+'</span>',
-    '<span class="chip line">有效样本 '+ (st.effective||0) +'</span>',
-    '<span class="chip line">营销 ' + Math.round((st.marketing_ratio||0)*100) + '%</span>',
-    '<span class="chip line">资产 ' + (st.assets||0) + '</span>'
-  ].join("");
+  $("#hMeta").innerHTML = isRefMode
+    ? [statusChip, '<span class="chip line">个股 '+(st.stocks||0)+'</span>',
+       '<span class="chip line">双榜共振 '+(st.both_boards||0)+'</span>',
+       '<span class="chip line">概念 '+(st.assets||0)+'</span>'].join("")
+    : [statusChip, calChip,
+       '<span class="chip line">抽取：'+ESC(ext)+'</span>',
+       '<span class="chip line">有效样本 '+ (st.effective||0) +'</span>',
+       '<span class="chip line">营销 ' + Math.round((st.marketing_ratio||0)*100) + '%</span>',
+       '<span class="chip line">资产 ' + (st.assets||0) + '</span>'].join("");
 
-  $("#banner").innerHTML = d.stale
-    ? '<div class="banner '+(d.status==="empty"?"":"bad")+'">'+ESC(d.stale_note||"今日采集中断，沿用上一期数据")+'</div>'
-    : (cal.mode==="bootstrap" ? '<div class="banner">冷启动第 '+(cal.history_days+1)+' 天：历史不足 '+cal.min_days_required+' 天，热度用截面归一、动量取中性。此期间数值仅用于排序，不与日后滚动口径比较。</div>' : '');
+  $("#banner").innerHTML = (d.status==="reference_only")
+    ? '<div class="banner">'+ESC(d.stale_note||"本期仅展示参考车道")+'</div>'
+    : (d.stale
+      ? '<div class="banner '+(d.status==="empty"?"":"bad")+'">'+ESC(d.stale_note||"今日采集中断，沿用上一期数据")+'</div>'
+      : (cal.mode==="bootstrap" ? '<div class="banner">冷启动第 '+(cal.history_days+1)+' 天：历史不足 '+cal.min_days_required+' 天，热度用截面归一、动量取中性。此期间数值仅用于排序，不与日后滚动口径比较。</div>' : ''));
+
+  const isRef = d.status === "reference_only";
+  ["#xhsMain","#xhsExtra"].forEach(function(sel){
+    const el = $(sel); if (el) el.style.display = isRef ? "none" : "";
+  });
 
   $("#boardHint").textContent = (d.leaderboard && d.leaderboard.length)
     ? "▲ 上升 ≥3 · ▼ 下降 ≥3 · 点开任一行看代表笔记与 60 日曲线" : "";
@@ -426,28 +462,38 @@ function renderReference(d){
   const ref = d.reference||{};
   const gate = ref.gate||{};
   const srcs = ref.sources||[];
-  const ok = srcs.filter(s=>s.ok).length;
-  $("#refHint").textContent = gate.passed
-    ? "参考样本 "+gate.matched_total+" 处提及（阈值 "+gate.min_required+"），已启用双热/独热判定。"
-    : (gate.note || (ref.note||"参考车道不可用") ) + " —— 照常展示原始条目，不参与判定。";
+  $("#refHint").innerHTML = srcs.map(function(x){
+    return '<span class="chip '+(x.ok?"ok":"bad")+'">'+ESC(x.name)+(x.ok?(" "+x.items):" 不可用")+'</span>';
+  }).join(" ") + (gate.passed
+      ? ' <span class="chip line">资产级对照 '+gate.matched_total+' 处提及</span>'
+      : ' <span class="chip line">' + ESC(gate.note||"资产级对照样本不足") + '</span>');
+
+  const stocks = ref.stocks||[];
+  $("#popBody").innerHTML = stocks.length ? stocks.map(function(x,i){
+    const chg = (x.chg_pct==null) ? "" : ((x.chg_pct>0?"+":"")+x.chg_pct.toFixed(2)+"%");
+    const cls = (x.chg_pct||0) >= 0 ? "up-pct" : "down-pct";
+    const strong = (x.em_rank && x.ths_rank && x.em_rank <= 10 && x.ths_rank <= 10);
+    const mark = strong ? '<span class="badge">双榜</span>' : (x.diverge ? '<span class="badge gray">分歧</span>' : '');
+    return '<tr>'
+      + '<td class="rk0">'+(i+1)+'</td>'
+      + '<td><span class="nm">'+ESC(x.name||x.code)+'</span><span class="cd">'+ESC(x.code)+'</span>'+mark+'</td>'
+      + '<td class="num">'+(x.em_rank||"—")+'</td>'
+      + '<td class="num">'+(x.ths_rank||"—")+'</td>'
+      + '<td class="num '+cls+'">'+chg+'</td>'
+      + '<td class="cc">'+ESC((x.concepts||[]).slice(0,3).join(" · "))+'</td>'
+      + '</tr>';
+  }).join("") : '<tr><td colspan="6" style="color:var(--ink4)">本期无数据</td></tr>';
+
+  const cs = ref.concepts||[];
+  $("#conceptChips").innerHTML = cs.length ? cs.map(function(c){
+    return '<span class="c" title="'+ESC((c.stocks||[]).join("、"))+'">'+ESC(c.name)+'<i>'+c.count+'</i></span>';
+  }).join("") : '<div class="hint">本期无概念数据</div>';
 
   const xq = ref.xueqiu_posts||[];
-  const xqs = srcs.find(s=>s.id==="xueqiu_hots");
-  $("#xqMeta").textContent = xqs ? (xqs.ok ? xqs.items+" 条" : "不可用") : "";
-  $("#xqList").innerHTML = xq.length ? xq.map((p,i)=>
-    '<li><span class="r">'+(i+1)+'</span><span class="n" title="'+ESC(p.title)+'">'+ESC(p.title)
-    +(p.assets&&p.assets.length?'<span class="tagx">'+p.assets.map(ESC).join("/")+'</span>':'')+'</span></li>').join("")
-    : '<li><span class="n" style="color:var(--ink4)">无条目</span></li>';
-
-  const em = ref.em_popularity||[];
-  const ems = srcs.find(s=>s.id==="em_popularity");
-  $("#emMeta").textContent = ems ? (ems.ok ? "Top "+ems.items : "不可用") : "";
-  $("#emList").innerHTML = em.length ? em.slice(0,10).map(x=>{
-    const rc = x.rank_change;
-    const cls = rc>0?"u":(rc<0?"d":"");
-    const txt = rc>0?("↑"+rc):(rc<0?("↓"+Math.abs(rc)):"");
-    return '<li><span class="r">'+x.rank+'</span><span class="n">'+ESC(x.name||x.code)+'</span><span class="'+cls+'">'+txt+'</span></li>';
-  }).join("") : '<li><span class="n" style="color:var(--ink4)">无数据</span></li>';
+  $("#xqList").innerHTML = xq.length ? xq.map(function(p,i){
+    return '<li><span class="r">'+(i+1)+'</span><span class="n" title="'+ESC(p.title)+'">'+ESC(p.title)
+      +(p.assets&&p.assets.length?'<span class="tagx">'+p.assets.map(ESC).join("/")+'</span>':'')+'</span></li>';
+  }).join("") : '<li><span class="n" style="color:var(--ink4)">无条目</span></li>';
 }
 
 function renderGates(d){
