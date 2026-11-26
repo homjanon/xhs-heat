@@ -1,0 +1,38 @@
+name: xhs-probe
+
+# 小红书连通性探测（只读，手动触发）
+# 用途：cookie 是否还有效、当前是否处于 461 冷却期、签名链路是否正常。
+# 不写产物、不提交、不影响看板。
+on:
+  workflow_dispatch:
+    inputs:
+      keywords:
+        description: "关键词，逗号分隔（越少越安全，默认 1 个）"
+        required: false
+        default: "基金"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: pip install --quiet -r requirements.txt
+
+      - name: 出口 IP
+        run: curl -s https://ipinfo.io/json | head -c 240; echo
+
+      - name: 探测
+        env:
+          XHS_COOKIE: ${{ secrets.XHS_COOKIE }}
+        run: |
+          python scripts/probe_xhs_cloud.py \
+            --keywords "${{ github.event.inputs.keywords }}" --show 2 || true

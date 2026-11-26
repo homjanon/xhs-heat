@@ -9,94 +9,112 @@
 
 ---
 
-## 一、架构：本地采集 + 云端处理发布
+## 一、架构：全云端，无需本地机器
 
 ```
-本地 Windows（住宅 IP，扫码登录）
-  collect_xhs.py ── 调 MediaCrawler ── 归一化 ── inbox/YYYY-MM-DD.jsonl.gz
-                                                        │ push（GitHub API）
-                                                        ▼
+Cloudflare Worker qdii-dispatch（心跳，16:40 北京）
+        │ workflow_dispatch
+        ▼
 GitHub Actions（publish.yml）
-  smoke_test → fetch_heat：去重/营销剥离 → 词典 → LLM 长尾 → 热度分 → 双留存
-  对照车道：雪球热帖（RSSHub）+ 东财人气榜
-                                                        │
-                                                        ▼
-  docs/latest.json + daily/ + agg/ + events.json + reports/ → GitHub Pages 看板
+  ① fetch_xhs.py    requests + xhshow 纯算法签名 + cookie → inbox/YYYY-MM-DD.jsonl.gz
+  ② fetch_heat.py   去重/营销剥离 → 词典 → LLM 长尾 → 热度分 → 榜单/事件库/报告
+  ③ 参考车道        雪球热帖（RSSHub）+ 东财人气榜
+  ④ 提交 docs/ → GitHub Pages 看板
 ```
 
-**为什么采集不在云端跑**：小红书按 IP 风控，Actions 的 Azure 段基本必挂；登录态需要扫码，CI 无法完成。
-云端只负责「处理 + 发布」，所以哪怕采集断了，看板也不会空窗——会输出带水印的 stale 版。
+**为什么不需要浏览器/MediaCrawler**（2026-11-26 实测）：小红书签名已可由 `xhshow` 纯算法生成，
+唯一必需的是**登录 cookie**。实测从 Azure 机房 IP 用同一 cookie 正常取到 44 条真实笔记（赞/藏/评齐全），
+所以采集可以完全跑在 Actions 里。
 
-## 二、每天怎么用
+## 二、风控纪律（实测出来的，不是猜的）
 
-```bash
-# 1) 采集（16:40 左右跑；首次会弹二维码，用小红书 App 扫码）
-python scripts/collect_xhs.py --push
-
-# 2) 云端自动处理并发布（push 触发），约 1 分钟出榜
-#    看板：https://xhs-heat.hellohopo.dpdns.org
-#    推送文本：docs/push/YYYY-MM-DD.txt
-```
-
-常用开关：
-
-```bash
-python scripts/collect_xhs.py --keywords 基金,黄金 --max-notes 20   # 小样本验证
-python scripts/collect_xhs.py --dry-run                             # 只打印命令
-python scripts/fetch_heat.py --demo                                  # 离线跑通全链路
-python scripts/fetch_heat.py --date 2026-11-26 --no-llm               # 强制词典口径
-python scripts/smoke_test.py                                         # 改配置后先跑这个
-python scripts/probe_sources.py                                      # 探测各源健康
-```
-
-## 三、首次部署（一次性）
-
-1. 本地装依赖并克隆 MediaCrawler：
-
-```bash
-pip install uv
-git clone https://github.com/NanmiCoder/MediaCrawler.git ../_mc
-cd ../_mc && uv sync && cd -
-```
-
-2. 采集一次（扫码）：
-
-```bash
-python scripts/collect_xhs.py --keywords 基金 --max-notes 20
-```
-
-3. GitHub 仓库 Secrets（Settings → Secrets → Actions）：
-
-| Secret | 用途 | 后果 |
+| 事实 | 数据 | 对策 |
 |---|---|---|
-| `AGNES_API_KEY` | 主模型（免费不限量） | 缺失则长尾抽取走下一档 |
-| `GEMINI_API_KEY` | 中间备份 | 缺失跳过 |
-| `SENSENOVA_API_KEY` | 末位兜底 | 缺失跳过 |
+| 匿名访问拿不到数据 | 机房 200 但被 302 到登录页，`noteId=0` | 必须登录 cookie |
+| 匿名访客**也有** `web_session` | 654B 游客 cookie | 判登录必须调 `/user/me` 看 `guest=false` |
+| **461 是账号级限流** | 换全新 Azure IP 仍 461；`user/me` 正常 | 换 IP 没用，只能控量 |
+| 触发阈值 | 连续 12–14 次搜索请求后开始 461 | **每天 15 个词 × 1 页**，按日轮换词池 |
+| 请求间隔 | 2s 间隔时更快触发 | **5–7s 间隔**，461 → 退避 90s，连续 2 次立即中止 |
 
-三档全缺也能跑：自动切「词典模式」，榜单照出，只是长尾资产识别变弱（页头会标 `抽取：词典模式`）。
+保守起步，连续 3 天无 461 再考虑扩容；扩容优先「多账号」而不是「加频率」。
 
-4. Pages：Settings → Pages → Source 选 `Deploy from a branch`，分支 `main`，目录 `/docs`。
-   CNAME 已写好 `xhs-heat.hellohopo.dpdns.org`。
+## 三、每天怎么跑
 
-5. 定时：本地 Windows 任务计划 16:40 执行
-   `python scripts/collect_xhs.py --push`（工作目录 `C:\Users\ho\WorkBuddy\xhs-heat`）。
-   刻意不用 GitHub `schedule` —— 实测延迟可达 2h48m，且与手动触发并存会双跑。
+由 CF Worker 心跳触发，无需人工：
 
-## 四、配置驱动（只改 `scripts/sources.json`）
+```bash
+# 手动补跑（采+发）
+gh workflow run publish.yml -f collect=yes
+
+# 只处理已有 inbox（不采集）
+gh workflow run publish.yml -f collect=no
+
+# 强制词典口径（不调 LLM）
+gh workflow run publish.yml -f mode=no-llm
+```
+
+本地调试：
+
+```bash
+python scripts/fetch_xhs.py --limit 3 --delay 8     # 小样本
+python scripts/fetch_heat.py --demo                  # 离线跑通全链路
+python scripts/smoke_test.py                         # 改配置后先跑这个
+python scripts/probe_sources.py                      # 探测各源健康
+```
+
+## 四、首次部署
+
+1. **Secrets**（Settings → Secrets → Actions）
+
+| Secret | 必需 | 用途 |
+|---|---|---|
+| `XHS_COOKIE` | ✅ | 小红书登录 cookie；过期需重扫 |
+| `AGNES_API_KEY` | 建议 | 主模型（免费不限量） |
+| `SENSENOVA_API_KEY` | 可选 | 末位兜底 |
+| `GEMINI_API_KEY` | 可选 | 中间备份 |
+
+  三个 LLM Key 全缺也能跑：自动切「词典模式」，榜单照出，只是长尾识别变弱。
+
+2. **Pages**：Settings → Pages → Source 选 `Deploy from a branch`，分支 `main`，目录 `/docs`。
+
+3. **DNS（Cloudflare）**：
+
+| 类型 | 名称 | 内容 | 代理状态 |
+|---|---|---|---|
+| CNAME | `xhs-heat` | `homjanon.github.io` | **DNS only（灰云）** |
+
+   灰云是必须的：橙云代理会让 GitHub 无法签发 Pages 证书。
+   记录生效后回 Pages 页面点 `Check again` → 勾 `Enforce HTTPS`。
+
+4. **CF Worker**：`qdii-dispatch` 里加一个槽位，北京时间 16:40 触发
+   `POST /repos/homjanon/xhs-heat/actions/workflows/publish.yml/dispatches`，
+   body `{"ref":"main","inputs":{"collect":"yes"}}`。
+
+## 五、cookie 维护（唯一的人工步骤）
+
+cookie 有效期通常数周。失效时 workflow 会打 `::warning title=cookie 失效::`，看板转 stale。
+
+```bash
+python scripts/get_xhs_cookie.py      # 用本机 Edge 弹二维码，扫码
+gh secret set XHS_COOKIE < .xhs_cookie.txt
+```
+
+脚本会调 `/user/me` 确认 `guest=false` 才保存——避免把游客态当成登录态（这个坑踩过一次）。
+
+## 六、配置驱动（只改 `scripts/sources.json`）
 
 | 段 | 管什么 |
 |---|---|
-| `lanes.xhs.mode_a.entry_keywords` | 入口词池（35 个，覆盖「投资的入口」而非具体标的） |
+| `lanes.xhs.mode_a.entry_keywords` | 入口词池（35 个） |
+| `lanes.xhs.mode_a.daily_keyword_limit` | 每日取几个词（默认 15，按日轮换） |
 | `asset_dict.assets` | 资产词典：36 资产 / 179 别名 + 消解规则 |
 | `heat` | 热度权重、互动权重、归一窗口、冷启动阈值 |
 | `hard_rules` | 营销识别词表、去重阈值、意图兜底词表 |
-| `quality_gates` | 有效样本 ≥200、营销占比告警 40% 等 |
+| `quality_gates` | 有效样本 ≥200、营销占比告警 40% |
 | `events` | 事件库入库门槛与容量 |
 | `llm` | 三档模型链与批次上限 |
 
-加资产、改词表、调阈值**都不需要动代码**；改完跑 `python scripts/smoke_test.py`。
-
-## 五、口径说明
+## 七、口径
 
 ```
 Heat = 100 × ( 0.45·V + 0.35·E + 0.20·M )
@@ -106,42 +124,46 @@ M 动量：讨论量 3 日增速，截断 [-2,+3]
 ```
 
 - 历史满 8 天 → 90 日滚动分位归一（`caliber=rolling`）
-- 历史不足 → 冷启动截面归一、动量取中性 0.5（`caliber=bootstrap`），页头明确标注，两种口径数值不可直接比
+- 历史不足 → 冷启动截面归一、动量取中性 0.5（`caliber=bootstrap`），页头标注，两种口径数值不可直接比
 - 意图五分类：`学/买/晒/愁/广`；营销只剥离、不删除，占比照常展示
 - 对照车道门槛：总提及 <6 或单资产 <2 → 标「参照样本不足」，不判双热/独热
+- ⚠️ 搜索接口只返回**标题**（无正文），匹配与分类都基于标题；这是当前口径的已知上限
 
-## 六、目录
+## 八、目录
 
 ```
 scripts/
   sources.json      唯一配置源
-  asset_dict.py     词典匹配 + 消歧（纯规则，内置 13 条自测）
+  fetch_xhs.py      云端采集器（cookie + xhshow 签名 + 限速/退避/轮换）
+  get_xhs_cookie.py 本机扫码取 cookie（唯一人工步骤）
+  asset_dict.py     词典匹配 + 消歧（内置 13 条自测）
   hard_rules.py     去重 / 营销 / 意图兜底
   llm_chain.py      三档降级 + 熔断 + JSON 解析
   heat.py           聚合 / 热度 / 事件库
   reference_lane.py 对照车道（雪球热帖 + 东财人气榜）
   fetch_heat.py     主流程（读 inbox → 产物）
-  collect_xhs.py    本地采集器
   smoke_test.py     离线冒烟（改配置后必跑）
   probe_sources.py  只读健康探测
+  probe_xhs_cloud.py 采集探针（实验用，可随时验证 cookie/IP）
+  collect_xhs.py    MediaCrawler 本地方案（已弃用，仅备用）
 docs/               看板与产物（Pages 根目录）
-inbox/              本地采集件（按日，30 天后可清）
+inbox/              每日采集件
 .github/workflows/  publish.yml / probe.yml
 ```
 
-## 七、合规红线
+## 九、合规红线
 
-- 只采公开笔记的标题/正文/互动量/时间；作者仅存哈希，不存昵称、头像、主页链接
-- 不执行任何互动操作（点赞/关注/私信）；单词 ≤3 页、全局 QPS ≤0.5、串行不并发
-- Cookie 与 API Key 只走本地环境变量 / GitHub Secrets，**绝不入仓**
+- 只采公开笔记的标题/互动量/发布时间；作者仅存哈希，不存昵称、头像、主页
+- 不执行任何互动操作（点赞/关注/私信）；串行、限速、每日限量
+- Cookie 与 API Key 只走 GitHub Secrets / 本地 `.env.local`，**绝不入仓**
 - 看板与推送固定声明：聚合公开内容的舆情观察，不构成投资建议，不代表平台官方数据
-- 触发风控（返回空 / 403 / 验证码）立即停 24h，不硬撞
+- 触发 461 立即停手，不在冷却期硬撞
 
-## 八、实施记录（2026-11-26）
+## 十、实施记录（2026-11-26）
 
-对 v3 设计的两处偏离，均已实测决定：
-
-| 项 | v3 原方案 | 实际 | 原因 |
-|---|---|---|---|
-| 采集位置 | 云端 Actions 跑 MediaCrawler | **本地采集 → 推 inbox → 云端处理** | XHS 按 IP 风控；登录态需扫码 |
-| 对照车道 | RSSHub 股吧路由 | 雪球热帖 + 东财人气榜 | 实测 `/guba/*` 在 4 个公共实例全 404；`/xueqiu/hots` 200/10 条；雪球直连 API 命中阿里云 WAF |
+| 决策 | 依据 |
+|---|---|
+| 采集从「本地 MediaCrawler」改为「云端轻量采集器」 | A2 实验：Azure IP + cookie 取到 44 条真实笔记；签名已可纯算法完成 |
+| 放弃 MediaCrawler | 30MB 依赖 + jieba 编译失败 + 需浏览器；新方案两个 pip 包即可 |
+| 每日 15 词、按日轮换 | 461 账号级限流，实测连续 12–14 次触发 |
+| 对照车道用雪球热帖 + 东财人气榜 | 股吧 RSSHub 路由 4 实例全 404；雪球直连 API 命中阿里云 WAF |

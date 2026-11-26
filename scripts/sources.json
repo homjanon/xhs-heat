@@ -6,37 +6,70 @@
     "updated": "2026-11-26",
     "comment": "全项目唯一配置源（ai-radar 原则三：配置驱动）。加词、加资产、改阈值只改这里，不改代码。任何配置/词典/prompt 变更后必须先跑 smoke_test.py。"
   },
-
   "lanes": {
     "xhs": {
       "enabled": true,
       "role": "主车道（深度）：开放式发现 + 固定追踪",
-      "crawler": "MediaCrawler",
-      "crawler_repo": "https://github.com/NanmiCoder/MediaCrawler",
+      "crawler": "自研轻量采集器（requests + xhshow 纯算法签名）",
+      "crawler_repo": "",
       "collector": {
-        "mode": "local",
-        "comment": "采集只能本地跑：小红书按 IP 风控，云端 Actions 必挂；登录态需扫码，CI 无法完成。云端只做处理与发布。",
-        "mc_dir": "../_mc",
-        "login_type": "qrcode",
-        "headless": false,
-        "max_notes_per_keyword": 20,
-        "get_comments": "yes",
-        "crawler_sleep_sec": 2
+        "mode": "cloud",
+        "script": "scripts/fetch_xhs.py",
+        "comment": "2026-11-26 实测：签名已可由 xhshow 纯算法完成，不需要浏览器/MediaCrawler；云端 Actions 可直接采集，只需登录 cookie（Secret XHS_COOKIE）",
+        "auth_check": "调 /api/sns/web/v2/user/me 看 guest=false；匿名访客也有 web_session，只看 cookie 会误判",
+        "risk_control": "461 是账号级限流：实测连续 12–14 次请求后触发，换 IP 不解封。每日限量 + 轮换词池 + 461 立即退避",
+        "legacy_local": "scripts/collect_xhs.py（MediaCrawler 方案，已弃用，仅作备用）"
       },
       "crawler_invocation": "uv run main.py --platform xhs --lt qrcode --type search",
       "mode_a": {
         "name": "开放式发现",
-        "comment": "入口词池覆盖『投资的入口』而非具体标的；发现什么由数据决定",
+        "comment": "入口词池覆盖『投资的入口』而非具体标的；发现什么由数据决定（461 是账号级风控：实测连续 12–14 次请求后触发，故按日限量轮换）",
         "entry_keywords": [
-          "炒股", "A股", "大A", "基金", "理财", "存款", "黄金", "ETF",
-          "纳指", "美股", "国债", "债基", "大额存单", "攒钱", "搞钱",
-          "被动收入", "复利", "定投", "比特币", "币圈", "金价", "金条",
-          "金豆", "存金", "股息", "红利", "恒生科技", "港股", "QDII",
-          "资产配置", "存款利率", "降息", "牛市", "熊市", "上车", "梭哈"
+          "炒股",
+          "A股",
+          "大A",
+          "基金",
+          "理财",
+          "存款",
+          "黄金",
+          "ETF",
+          "纳指",
+          "美股",
+          "国债",
+          "债基",
+          "大额存单",
+          "攒钱",
+          "搞钱",
+          "被动收入",
+          "复利",
+          "定投",
+          "比特币",
+          "币圈",
+          "金价",
+          "金条",
+          "金豆",
+          "存金",
+          "股息",
+          "红利",
+          "恒生科技",
+          "港股",
+          "QDII",
+          "资产配置",
+          "存款利率",
+          "降息",
+          "牛市",
+          "熊市",
+          "上车",
+          "梭哈"
         ],
         "pages_per_keyword": 3,
-        "sort_options": ["hot", "time"],
-        "max_daily_notes": 1200
+        "sort_options": [
+          "hot",
+          "time"
+        ],
+        "max_daily_notes": 1200,
+        "daily_keyword_limit": 15,
+        "rotation": "按日期确定性轮换：每天从词池取 15 个，同一天重跑结果一致，跨日覆盖全池"
       },
       "mode_b": {
         "name": "固定追踪",
@@ -62,7 +95,9 @@
           "id": "xueqiu_hots",
           "name": "雪球热帖",
           "method": "rsshub",
-          "routes": ["/xueqiu/hots"],
+          "routes": [
+            "/xueqiu/hots"
+          ],
           "enabled": true,
           "weight": "热帖正文提及计数（资产级可比）",
           "note": "2026-11-26 实测 hub.slarker.me 返回 200 / 10 条；标题为空，正文在 <description>"
@@ -72,7 +107,13 @@
           "name": "东方财富人气榜",
           "method": "http_json",
           "url": "https://emappdata.eastmoney.com/stockrank/getAllCurrentList",
-          "payload": {"appId": "appId01", "globalId": "786e4c21-70dc-435a-93bb-38", "marketType": "", "pageNo": 1, "pageSize": 20},
+          "payload": {
+            "appId": "appId01",
+            "globalId": "786e4c21-70dc-435a-93bb-38",
+            "marketType": "",
+            "pageNo": 1,
+            "pageSize": 20
+          },
           "enabled": true,
           "weight": "散户人气（个股榜，旁证，不与资产热度直接对照）",
           "note": "2026-11-26 实测 200/967B；emappdata 与 push2 行情接口是不同风控面"
@@ -95,7 +136,6 @@
       "note": "股吧路由 2026-11-26 实测在 4 个公共实例全 404（主仓已删）；雪球直连 API 命中阿里云 WAF，故走 RSSHub 实例"
     }
   },
-
   "asset_dict": {
     "categories": {
       "CN_ETF": "A股指数/行业ETF",
@@ -107,60 +147,474 @@
       "OTHER": "房产/保险/其他"
     },
     "assets": [
-      { "id": "CN_BROAD_A",      "category": "CN_ETF",       "name": "A股大盘",       "aliases": ["大A", "A股", "上证", "大盘", "沪指", "上证指数", "上证综指", "深成指"] },
-      { "id": "CSI300_510300",   "category": "CN_ETF",       "name": "沪深300",       "aliases": ["沪深300", "510300", "沪深三百"] },
-      { "id": "STAR50_588000",   "category": "CN_ETF",       "name": "科创50",        "aliases": ["科创50", "588000", "科创板"] },
-      { "id": "GEM_159915",      "category": "CN_ETF",       "name": "创业板",        "aliases": ["创业板", "159915", "创业板指", "创业板ETF"] },
-      { "id": "SEMI_512480",     "category": "CN_ETF",       "name": "半导体",        "aliases": ["半导体", "512480", "芯片", "芯片ETF", "半导体ETF", "国产替代"] },
-      { "id": "CPO_515880",      "category": "CN_ETF",       "name": "CPO/通信",      "aliases": ["CPO", "515880", "通信ETF", "光模块", "光芯片", "1.6T"] },
-      { "id": "MILI_512660",     "category": "CN_ETF",       "name": "军工",          "aliases": ["军工", "512660", "国防", "军工ETF"] },
-      { "id": "INNOV_159992",    "category": "CN_ETF",       "name": "创新药",        "aliases": ["创新药", "159992", "创新药ETF", "医药", "医药ETF", "CXO"] },
-      { "id": "ROBOT_159611",    "category": "CN_ETF",       "name": "机器人",        "aliases": ["机器人", "人形机器人", "159611", "机器人ETF", "具身智能"] },
-      { "id": "SOLAR_515790",    "category": "CN_ETF",       "name": "光伏",          "aliases": ["光伏", "515790", "光伏ETF"] },
-      { "id": "NEV",             "category": "CN_ETF",       "name": "新能源车",      "aliases": ["新能源车", "新能源", "锂电", "固态电池", "宁德时代"] },
-      { "id": "BROKER_512880",   "category": "CN_ETF",       "name": "券商",          "aliases": ["券商", "证券ETF", "512880", "券商股"],
-        "disambiguation": "含『开户|账户|佣金』→ 非资产（skip，返回 None）" },
-      { "id": "DIV_LOW",         "category": "CN_ETF",       "name": "红利/高股息",   "aliases": ["红利", "红利低波", "高股息", "红利ETF", "股息率", "收息"] },
-      { "id": "AI_ETF",          "category": "CN_ETF",       "name": "AI/算力",       "aliases": ["AI股", "人工智能ETF", "算力", "AIDC", "IDC"],
-        "disambiguation": "『算力』含『CPO|光模块』→ CPO_515880；含『英伟达|GPU』→ NVDA" },
-      { "id": "HSTECH_513180",   "category": "CN_ETF",       "name": "恒生科技",      "aliases": ["恒生科技", "513180", "港股科技", "恒科"] },
-      { "id": "HKCONN_513050",   "category": "CN_ETF",       "name": "港股/中概",     "aliases": ["港股", "中概", "中概互联", "513050", "恒生", "腾讯控股", "阿里"] },
-      { "id": "NASDAQ_QDII",     "category": "QDII",         "name": "纳指QDII",      "aliases": ["纳指", "纳斯达克", "513100", "016452", "纳指ETF", "纳指基金", "纳指QDII"],
-        "disambiguation": "默认归此；含『159632|纳指科技』→ NASDAQ_TECH 变体（词典后续补）" },
-      { "id": "SP500_QDII",      "category": "QDII",         "name": "标普500",       "aliases": ["标普", "标普500", "017641", "513500", "标普ETF"] },
-      { "id": "NIKKEI_QDII",     "category": "QDII",         "name": "日经",          "aliases": ["日经", "日本股市", "日经ETF", "513520"] },
-      { "id": "OIL_QDII",        "category": "QDII",         "name": "原油",          "aliases": ["原油", "石油基金", "原油QDII", "162411"] },
-      { "id": "GOLD_ETF_518880", "category": "COMMODITY",    "name": "黄金(投资)",    "aliases": ["黄金ETF", "518880", "金价", "金条", "存金", "积存金", "黄金基金", "黄金定投", "攒金豆", "金豆", "黄金"],
-        "disambiguation": "『黄金|金豆』含『三金|婚|首饰|金镯|嫁妆|买金子送』→ GOLD_JEWELRY；含『定投|净值|上车|ETF|存金』→ 本资产；均无 → 本资产(低置信)" },
-      { "id": "GOLD_JEWELRY",    "category": "COMMODITY",    "name": "金饰(消费)",    "aliases": ["三金", "金镯", "金饰", "金项链"],
-        "disambiguation": "消费语境，不计入投资热度，仅在报告中单列" },
-      { "id": "SILVER",          "category": "COMMODITY",    "name": "白银",          "aliases": ["白银", "银价", "白银ETF", "银条"] },
-      { "id": "COPPER",          "category": "COMMODITY",    "name": "铜",            "aliases": ["铜价", "铜", "有色", "铜ETF"] },
-      { "id": "DEPOSIT",         "category": "FIXED_INCOME", "name": "存款",          "aliases": ["存款", "大额存单", "定期存款", "存单", "存款利率", "利率"] },
-      { "id": "BOND_FUND",       "category": "FIXED_INCOME", "name": "债基",          "aliases": ["债基", "债券基金", "纯债", "国债", "逆回购", "债券", "信用债"] },
-      { "id": "MONEY_FUND",      "category": "FIXED_INCOME", "name": "货基",          "aliases": ["货基", "余额宝", "闲钱理财", "货币基金", "零钱理财"] },
-      { "id": "BTC",             "category": "CRYPTO",       "name": "比特币",        "aliases": ["比特币", "大饼", "BTC", "币圈", "币安", "屯币"] },
-      { "id": "ETH",             "category": "CRYPTO",       "name": "以太坊",        "aliases": ["以太坊", "以太", "ETH", "以太币"] },
-      { "id": "STABLE_YIELD",    "category": "CRYPTO",       "name": "稳定币理财",    "aliases": ["U理财", "稳定币", "USDT", "加密存款"] },
-      { "id": "NVDA",            "category": "US_EQUITY",    "name": "英伟达",        "aliases": ["英伟达", "NVDA", "老黄"] },
-      { "id": "TSLA",            "category": "US_EQUITY",    "name": "特斯拉",        "aliases": ["TSLA", "马斯克", "特斯拉"] },
-      { "id": "US_BROAD",        "category": "US_EQUITY",    "name": "美股泛指",      "aliases": ["美股", "美股开户", "苹果股票", "微软", "谷歌", "Meta"] },
-      { "id": "REITS",           "category": "OTHER",        "name": "REITs",         "aliases": ["REITs", "不动产基金", "收租股", "保租房"] },
-      { "id": "INSURANCE",       "category": "OTHER",        "name": "储蓄险",        "aliases": ["增额寿", "储蓄险", "年金", "养老年金"] },
-      { "id": "HOUSE",           "category": "OTHER",        "name": "房产",          "aliases": ["买房", "房价", "房贷", "首付", "楼市"],
-        "comment": "生活话题为主，仅当上下文含『投资|出租|收租』时计入" }
+      {
+        "id": "CN_BROAD_A",
+        "category": "CN_ETF",
+        "name": "A股大盘",
+        "aliases": [
+          "大A",
+          "A股",
+          "上证",
+          "大盘",
+          "沪指",
+          "上证指数",
+          "上证综指",
+          "深成指"
+        ]
+      },
+      {
+        "id": "CSI300_510300",
+        "category": "CN_ETF",
+        "name": "沪深300",
+        "aliases": [
+          "沪深300",
+          "510300",
+          "沪深三百"
+        ]
+      },
+      {
+        "id": "STAR50_588000",
+        "category": "CN_ETF",
+        "name": "科创50",
+        "aliases": [
+          "科创50",
+          "588000",
+          "科创板"
+        ]
+      },
+      {
+        "id": "GEM_159915",
+        "category": "CN_ETF",
+        "name": "创业板",
+        "aliases": [
+          "创业板",
+          "159915",
+          "创业板指",
+          "创业板ETF"
+        ]
+      },
+      {
+        "id": "SEMI_512480",
+        "category": "CN_ETF",
+        "name": "半导体",
+        "aliases": [
+          "半导体",
+          "512480",
+          "芯片",
+          "芯片ETF",
+          "半导体ETF",
+          "国产替代"
+        ]
+      },
+      {
+        "id": "CPO_515880",
+        "category": "CN_ETF",
+        "name": "CPO/通信",
+        "aliases": [
+          "CPO",
+          "515880",
+          "通信ETF",
+          "光模块",
+          "光芯片",
+          "1.6T"
+        ]
+      },
+      {
+        "id": "MILI_512660",
+        "category": "CN_ETF",
+        "name": "军工",
+        "aliases": [
+          "军工",
+          "512660",
+          "国防",
+          "军工ETF"
+        ]
+      },
+      {
+        "id": "INNOV_159992",
+        "category": "CN_ETF",
+        "name": "创新药",
+        "aliases": [
+          "创新药",
+          "159992",
+          "创新药ETF",
+          "医药",
+          "医药ETF",
+          "CXO"
+        ]
+      },
+      {
+        "id": "ROBOT_159611",
+        "category": "CN_ETF",
+        "name": "机器人",
+        "aliases": [
+          "机器人",
+          "人形机器人",
+          "159611",
+          "机器人ETF",
+          "具身智能"
+        ]
+      },
+      {
+        "id": "SOLAR_515790",
+        "category": "CN_ETF",
+        "name": "光伏",
+        "aliases": [
+          "光伏",
+          "515790",
+          "光伏ETF"
+        ]
+      },
+      {
+        "id": "NEV",
+        "category": "CN_ETF",
+        "name": "新能源车",
+        "aliases": [
+          "新能源车",
+          "新能源",
+          "锂电",
+          "固态电池",
+          "宁德时代"
+        ]
+      },
+      {
+        "id": "BROKER_512880",
+        "category": "CN_ETF",
+        "name": "券商",
+        "aliases": [
+          "券商",
+          "证券ETF",
+          "512880",
+          "券商股"
+        ],
+        "disambiguation": "含『开户|账户|佣金』→ 非资产（skip，返回 None）"
+      },
+      {
+        "id": "DIV_LOW",
+        "category": "CN_ETF",
+        "name": "红利/高股息",
+        "aliases": [
+          "红利",
+          "红利低波",
+          "高股息",
+          "红利ETF",
+          "股息率",
+          "收息"
+        ]
+      },
+      {
+        "id": "AI_ETF",
+        "category": "CN_ETF",
+        "name": "AI/算力",
+        "aliases": [
+          "AI股",
+          "人工智能ETF",
+          "算力",
+          "AIDC",
+          "IDC"
+        ],
+        "disambiguation": "『算力』含『CPO|光模块』→ CPO_515880；含『英伟达|GPU』→ NVDA"
+      },
+      {
+        "id": "HSTECH_513180",
+        "category": "CN_ETF",
+        "name": "恒生科技",
+        "aliases": [
+          "恒生科技",
+          "513180",
+          "港股科技",
+          "恒科"
+        ]
+      },
+      {
+        "id": "HKCONN_513050",
+        "category": "CN_ETF",
+        "name": "港股/中概",
+        "aliases": [
+          "港股",
+          "中概",
+          "中概互联",
+          "513050",
+          "恒生",
+          "腾讯控股",
+          "阿里"
+        ]
+      },
+      {
+        "id": "NASDAQ_QDII",
+        "category": "QDII",
+        "name": "纳指QDII",
+        "aliases": [
+          "纳指",
+          "纳斯达克",
+          "513100",
+          "016452",
+          "纳指ETF",
+          "纳指基金",
+          "纳指QDII"
+        ],
+        "disambiguation": "默认归此；含『159632|纳指科技』→ NASDAQ_TECH 变体（词典后续补）"
+      },
+      {
+        "id": "SP500_QDII",
+        "category": "QDII",
+        "name": "标普500",
+        "aliases": [
+          "标普",
+          "标普500",
+          "017641",
+          "513500",
+          "标普ETF"
+        ]
+      },
+      {
+        "id": "NIKKEI_QDII",
+        "category": "QDII",
+        "name": "日经",
+        "aliases": [
+          "日经",
+          "日本股市",
+          "日经ETF",
+          "513520"
+        ]
+      },
+      {
+        "id": "OIL_QDII",
+        "category": "QDII",
+        "name": "原油",
+        "aliases": [
+          "原油",
+          "石油基金",
+          "原油QDII",
+          "162411"
+        ]
+      },
+      {
+        "id": "GOLD_ETF_518880",
+        "category": "COMMODITY",
+        "name": "黄金(投资)",
+        "aliases": [
+          "黄金ETF",
+          "518880",
+          "金价",
+          "金条",
+          "存金",
+          "积存金",
+          "黄金基金",
+          "黄金定投",
+          "攒金豆",
+          "金豆",
+          "黄金"
+        ],
+        "disambiguation": "『黄金|金豆』含『三金|婚|首饰|金镯|嫁妆|买金子送』→ GOLD_JEWELRY；含『定投|净值|上车|ETF|存金』→ 本资产；均无 → 本资产(低置信)"
+      },
+      {
+        "id": "GOLD_JEWELRY",
+        "category": "COMMODITY",
+        "name": "金饰(消费)",
+        "aliases": [
+          "三金",
+          "金镯",
+          "金饰",
+          "金项链"
+        ],
+        "disambiguation": "消费语境，不计入投资热度，仅在报告中单列"
+      },
+      {
+        "id": "SILVER",
+        "category": "COMMODITY",
+        "name": "白银",
+        "aliases": [
+          "白银",
+          "银价",
+          "白银ETF",
+          "银条"
+        ]
+      },
+      {
+        "id": "COPPER",
+        "category": "COMMODITY",
+        "name": "铜",
+        "aliases": [
+          "铜价",
+          "铜",
+          "有色",
+          "铜ETF"
+        ]
+      },
+      {
+        "id": "DEPOSIT",
+        "category": "FIXED_INCOME",
+        "name": "存款",
+        "aliases": [
+          "存款",
+          "大额存单",
+          "定期存款",
+          "存单",
+          "存款利率",
+          "利率"
+        ]
+      },
+      {
+        "id": "BOND_FUND",
+        "category": "FIXED_INCOME",
+        "name": "债基",
+        "aliases": [
+          "债基",
+          "债券基金",
+          "纯债",
+          "国债",
+          "逆回购",
+          "债券",
+          "信用债"
+        ]
+      },
+      {
+        "id": "MONEY_FUND",
+        "category": "FIXED_INCOME",
+        "name": "货基",
+        "aliases": [
+          "货基",
+          "余额宝",
+          "闲钱理财",
+          "货币基金",
+          "零钱理财"
+        ]
+      },
+      {
+        "id": "BTC",
+        "category": "CRYPTO",
+        "name": "比特币",
+        "aliases": [
+          "比特币",
+          "大饼",
+          "BTC",
+          "币圈",
+          "币安",
+          "屯币"
+        ]
+      },
+      {
+        "id": "ETH",
+        "category": "CRYPTO",
+        "name": "以太坊",
+        "aliases": [
+          "以太坊",
+          "以太",
+          "ETH",
+          "以太币"
+        ]
+      },
+      {
+        "id": "STABLE_YIELD",
+        "category": "CRYPTO",
+        "name": "稳定币理财",
+        "aliases": [
+          "U理财",
+          "稳定币",
+          "USDT",
+          "加密存款"
+        ]
+      },
+      {
+        "id": "NVDA",
+        "category": "US_EQUITY",
+        "name": "英伟达",
+        "aliases": [
+          "英伟达",
+          "NVDA",
+          "老黄"
+        ]
+      },
+      {
+        "id": "TSLA",
+        "category": "US_EQUITY",
+        "name": "特斯拉",
+        "aliases": [
+          "TSLA",
+          "马斯克",
+          "特斯拉"
+        ]
+      },
+      {
+        "id": "US_BROAD",
+        "category": "US_EQUITY",
+        "name": "美股泛指",
+        "aliases": [
+          "美股",
+          "美股开户",
+          "苹果股票",
+          "微软",
+          "谷歌",
+          "Meta"
+        ]
+      },
+      {
+        "id": "REITS",
+        "category": "OTHER",
+        "name": "REITs",
+        "aliases": [
+          "REITs",
+          "不动产基金",
+          "收租股",
+          "保租房"
+        ]
+      },
+      {
+        "id": "INSURANCE",
+        "category": "OTHER",
+        "name": "储蓄险",
+        "aliases": [
+          "增额寿",
+          "储蓄险",
+          "年金",
+          "养老年金"
+        ]
+      },
+      {
+        "id": "HOUSE",
+        "category": "OTHER",
+        "name": "房产",
+        "aliases": [
+          "买房",
+          "房价",
+          "房贷",
+          "首付",
+          "楼市"
+        ],
+        "comment": "生活话题为主，仅当上下文含『投资|出租|收租』时计入"
+      }
     ]
   },
-
   "llm": {
     "comment": "模型链逐档降级（ai-radar 机制）：429 当轮熔断不再撞；503/超时下批重试；全失败走硬规则兜底，绝不空窗。端点与 Key 复用 portfolio 三档链。",
     "chains": {
       "extract": {
         "purpose": "实体抽取长尾（词典未命中的片段）+ 语境判断",
         "models": [
-          { "name": "Agnes agnes-3.0-flash", "api_url": "https://apihub.agnes-ai.com/v1/chat/completions", "api_key_env": "AGNES_API_KEY", "model": "agnes-3.0-flash", "note": "免费不限量，首位；关闭内部思考避免挤空可见输出", "thinking_off": true },
-          { "name": "Gemini 3.5 Flash-Lite", "api_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "api_key_env": "GEMINI_API_KEY", "model": "gemini-3.5-flash-lite", "note": "额度独立，居中备份" },
-          { "name": "SenseNova deepseek-flash", "api_url": "https://token.sensenova.cn/v1/chat/completions", "api_key_env": "SENSENOVA_API_KEY", "model": "deepseek-flash", "note": "免费但 RPM 紧，末位兜底", "reasoning_effort_low": true }
+          {
+            "name": "Agnes agnes-3.0-flash",
+            "api_url": "https://apihub.agnes-ai.com/v1/chat/completions",
+            "api_key_env": "AGNES_API_KEY",
+            "model": "agnes-3.0-flash",
+            "note": "免费不限量，首位；关闭内部思考避免挤空可见输出",
+            "thinking_off": true
+          },
+          {
+            "name": "Gemini 3.5 Flash-Lite",
+            "api_url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            "api_key_env": "GEMINI_API_KEY",
+            "model": "gemini-3.5-flash-lite",
+            "note": "额度独立，居中备份"
+          },
+          {
+            "name": "SenseNova deepseek-flash",
+            "api_url": "https://token.sensenova.cn/v1/chat/completions",
+            "api_key_env": "SENSENOVA_API_KEY",
+            "model": "deepseek-flash",
+            "note": "免费但 RPM 紧，末位兜底",
+            "reasoning_effort_low": true
+          }
         ]
       },
       "classify": {
@@ -182,15 +636,34 @@
       "circuit_breaker": "429 → 本轮跳过该模型；503/超时 → 下批重试；全部模型失败 → 切词典口径并在报告标降级"
     }
   },
-
   "hard_rules": {
     "marketing": {
       "comment": "营销识别是纯硬规则（ai-radar 原则一），不用 LLM",
       "near_duplicate_threshold": 0.8,
       "same_text_interval_hours": 6,
-      "funnel_keywords": ["加微", "加V", "领资料", "私信我", "进群", "内部课", "扫码", "带你飞", "老师的圈", "扣1", "评论区留言", "免费领"],
+      "funnel_keywords": [
+        "加微",
+        "加V",
+        "领资料",
+        "私信我",
+        "进群",
+        "内部课",
+        "扫码",
+        "带你飞",
+        "老师的圈",
+        "扣1",
+        "评论区留言",
+        "免费领"
+      ],
       "author_commercial_ratio_threshold": 0.3,
-      "template_titles": ["普通人逆袭", "错过再等十年", "下一个风口", "普通人也能抓住", "时代红利", "躺赚"]
+      "template_titles": [
+        "普通人逆袭",
+        "错过再等十年",
+        "下一个风口",
+        "普通人也能抓住",
+        "时代红利",
+        "躺赚"
+      ]
     },
     "dedup": {
       "title_similarity_threshold": 0.8,
@@ -198,20 +671,73 @@
       "comment": "跨源折叠同构 ai-radar；跨日重复不剔除，只做趋势标记"
     },
     "intent_lexicon": {
-      "学": ["怎么买", "如何买", "科普", "是什么", "区别", "入门", "新手", "教程", "配置比例", "原理"],
-      "买": ["上车", "开户", "已买", "加仓", "建仓", "买入", "定投", "抄底"],
-      "晒": ["赚了", "收益", "提车", "浮盈", "回本", "翻倍", "感谢"],
-      "愁": ["亏了", "怎么办", "割肉", "套牢", "跌了", "解套", "要不要卖"],
-      "广": ["加微", "私信", "领资料", "进群", "扫码", "内部课"]
+      "学": [
+        "怎么买",
+        "如何买",
+        "科普",
+        "是什么",
+        "区别",
+        "入门",
+        "新手",
+        "教程",
+        "配置比例",
+        "原理"
+      ],
+      "买": [
+        "上车",
+        "开户",
+        "已买",
+        "加仓",
+        "建仓",
+        "买入",
+        "定投",
+        "抄底"
+      ],
+      "晒": [
+        "赚了",
+        "收益",
+        "提车",
+        "浮盈",
+        "回本",
+        "翻倍",
+        "感谢"
+      ],
+      "愁": [
+        "亏了",
+        "怎么办",
+        "割肉",
+        "套牢",
+        "跌了",
+        "解套",
+        "要不要卖"
+      ],
+      "广": [
+        "加微",
+        "私信",
+        "领资料",
+        "进群",
+        "扫码",
+        "内部课"
+      ]
     },
-    "momentum_clip": [-2, 3],
+    "momentum_clip": [
+      -2,
+      3
+    ],
     "single_note_heat_cap": 0.1,
     "time_window_days": 1
   },
-
   "heat": {
-    "weights": { "volume": 0.45, "engagement": 0.35, "momentum": 0.20 },
-    "engagement_weights": { "like": 1, "collect": 3, "comment": 2 },
+    "weights": {
+      "volume": 0.45,
+      "engagement": 0.35,
+      "momentum": 0.2
+    },
+    "engagement_weights": {
+      "like": 1,
+      "collect": 3,
+      "comment": 2
+    },
     "engagement_log_base": 10,
     "norm_window_days": 90,
     "norm_method": "rolling_percentile",
@@ -219,7 +745,6 @@
     "bootstrap_scaling": "log1p_cross_section",
     "comment": "90 日分位数归一：平台内容总量年增 ~100%（白皮书 +107%），绝对值必然虚高。历史不足 8 天时走冷启动口径（截面 log 归一、动量中性 0.5），并在产物标 caliber=bootstrap"
   },
-
   "quality_gates": {
     "min_effective_notes": 200,
     "min_extract_confidence": 0.85,
@@ -227,35 +752,45 @@
     "on_fail": "榜单照常展示但标记『样本不足/降置信』，绝不静默",
     "report": "每次运行写 docs/data/reports/{ts}.json：每词通路/条数/降级原因"
   },
-
   "events": {
-    "comment": "资产事件库（严口径，ai-radar 案例库同构）",
+    "comment": "门槛字段变更时对库内老记录补判（rescore 机制）；『判不了』的记录保留，绝不静默误删",
     "entry_rules": [
-      { "rule": "heat_ge_consecutive", "heat": 80, "consecutive_days": 3 },
-      { "rule": "momentum_percentile", "percentile": 0.95 },
-      { "rule": "newcomer_fast", "within_days": 7, "reach_top": 5 }
+      {
+        "rule": "heat_ge_consecutive",
+        "heat": 80,
+        "consecutive_days": 3
+      },
+      {
+        "rule": "momentum_percentile",
+        "percentile": 0.95
+      },
+      {
+        "rule": "newcomer_fast",
+        "within_days": 7,
+        "reach_top": 5
+      }
     ],
     "capacity": 300,
     "eviction": "按事件峰值热度降序淘汰",
-    "rescore_batch": 30,
-    "comment": "门槛字段变更时对库内老记录补判（rescore 机制）；『判不了』的记录保留，绝不静默误删"
+    "rescore_batch": 30
   },
-
   "schedule": {
     "trigger": "本地采集器 16:40 定时 → push inbox → workflow 自动触发；另留 workflow_dispatch 供 CF qdii-dispatch 心跳补跑",
     "time": "16:40 Asia/Shanghai",
     "use_github_schedule": false,
     "note": "GitHub schedule 实测延迟可达 2h48m，且与手动触发并存会双跑烧额度（ai-radar 踩坑记录），本仓禁止使用"
   },
-
   "output": {
     "leaderboard_top": 10,
     "surge_top": 3,
     "newcomers": true,
-    "lane_tags": ["double_hot", "xhs_only_hot", "reference_only_hot"],
+    "lane_tags": [
+      "double_hot",
+      "xhs_only_hot",
+      "reference_only_hot"
+    ],
     "push": "微信原生阅读排版（同金融日报风格），适合 TTS 播报"
   },
-
   "compliance": {
     "public_metadata_only": true,
     "author_hashed": true,

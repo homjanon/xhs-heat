@@ -72,6 +72,7 @@ def normalize_note(raw, source="xhs"):
     if not title and not desc:
         return None
     author = raw.get("nickname") or raw.get("user_nickname") or raw.get("user_id") or ""
+    author_hash = raw.get("author_hash") or (sha1_short(author) if author else "")
     note_id = str(raw.get("note_id") or raw.get("id") or raw.get("aweme_id")
                   or sha1_short(title + desc, 16))
     ts = parse_ts(raw.get("time") or raw.get("create_time") or raw.get("publish_time")
@@ -80,7 +81,7 @@ def normalize_note(raw, source="xhs"):
         "id": note_id,
         "title": title,
         "desc": desc,
-        "author_hash": sha1_short(author) if author else "",
+        "author_hash": author_hash,
         "liked": parse_count(raw.get("liked_count") or raw.get("liked")),
         "collected": parse_count(raw.get("collected_count") or raw.get("collected")),
         "comment": parse_count(raw.get("comment_count") or raw.get("comment")),
