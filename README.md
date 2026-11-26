@@ -86,9 +86,19 @@ python scripts/probe_sources.py                      # 探测各源健康
    灰云是必须的：橙云代理会让 GitHub 无法签发 Pages 证书。
    记录生效后回 Pages 页面点 `Check again` → 勾 `Enforce HTTPS`。
 
-4. **CF Worker**：`qdii-dispatch` 里加一个槽位，北京时间 16:40 触发
-   `POST /repos/homjanon/xhs-heat/actions/workflows/publish.yml/dispatches`，
-   body `{"ref":"main","inputs":{"collect":"yes"}}`。
+4. **CF Worker**：`qdii-dispatch` 里加一个槽位，北京时间 16:40 触发：
+
+```js
+// 现有 worker 里加一个槽位即可（与 qdii / portfolio 同构）
+const XHS_HEAT = {
+  repo: "homjanon/xhs-heat",
+  workflow: "publish.yml",
+  at: { hour: 16, minute: 40 },          // Asia/Shanghai
+  body: { ref: "main", inputs: { collect: "run" } },
+};
+// POST https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches
+// Authorization: Bearer <GitHub PAT>（已存在的那把即可）
+```
 
 ## 五、cookie 维护（唯一的人工步骤）
 
