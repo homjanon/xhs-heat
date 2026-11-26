@@ -8,3 +8,6 @@ _check.js
 .DS_Store
 Thumbs.db
 logs/
+_xhs_profile/
+.xhs_cookie.txt
+_xhs_login.png
