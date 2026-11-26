@@ -92,6 +92,8 @@ jobs:
           MODE="${{ inputs.mode }}"
           if [ "$MODE" = "no-llm" ]; then
             python scripts/fetch_heat.py $DATE_ARG --no-llm
+          elif [ "$MODE" = "reference-only" ]; then
+            python scripts/fetch_heat.py $DATE_ARG --reference-only
           else
             python scripts/fetch_heat.py $DATE_ARG
           fi
