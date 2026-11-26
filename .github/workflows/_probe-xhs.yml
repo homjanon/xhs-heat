@@ -1,9 +1,15 @@
 name: _probe-xhs-cloud
 
-# 临时探测 2：机房 IP 拿到的 HTML 里到底有没有笔记数据（标题/点赞/作者）。
-# 结论出来后删除本文件。
+# A2 实验：用真实登录 cookie + xhshow 纯算法签名，从 GitHub Actions（Azure 机房 IP）
+# 调小红书搜索接口。通过 = 云端可采集；461/300011 = 只能走住宅 IP。
+# 实验结束后删除本文件。
 on:
   workflow_dispatch:
+    inputs:
+      keywords:
+        description: "关键词，逗号分隔"
+        required: false
+        default: "基金,黄金"
 
 permissions:
   contents: read
@@ -13,38 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - name: 抓页面并解析
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: pip install --quiet requests xhshow
+
+      - name: 出口 IP
+        run: curl -s https://ipinfo.io/json | head -c 260; echo
+
+      - name: 采集探针
+        env:
+          XHS_COOKIE: ${{ secrets.XHS_COOKIE }}
         run: |
-          pip install --quiet requests
-          python - <<'PY'
-          import re, json, requests
-          UA=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-          h={"User-Agent":UA,"Accept-Language":"zh-CN,zh;q=0.9","Referer":"https://www.xiaohongshu.com/"}
-
-          def look(name,url):
-              print("="*20,name)
-              r=requests.get(url,headers=h,timeout=25)
-              t=r.text
-              print("HTTP",r.status_code,"len",len(t),"final",r.url[:110])
-              for k in ["__INITIAL_STATE__","noteCard","likedCount","noteId","登录后","验证","461","captcha"]:
-                  print(f"  {k}: {t.count(k)}")
-              m=re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*?\})\s*</script>",t,re.S)
-              if m:
-                  raw=m.group(1).replace("undefined","null")
-                  try:
-                      st=json.loads(raw)
-                      print("  INITIAL_STATE keys:",list(st)[:14])
-                      blob=json.dumps(st,ensure_ascii=False)
-                      print("  state len",len(blob),"noteId in state:",blob.count('"noteId"'),"likedCount:",blob.count('likedCount'))
-                      for mm in re.finditer(r'"(?:displayTitle|title)"\s*:\s*"([^"]{4,40})"',blob):
-                          print("   title>>",mm.group(1)[:40]); break
-                  except Exception as e:
-                      print("  state parse fail:",e)
-              # 抽样看看有没有笔记链接
-              ids=set(re.findall(r'/explore/([0-9a-f]{24})',t))
-              print("  /explore/ 笔记 id 数:",len(ids), list(ids)[:3])
-
-          look("explore","https://www.xiaohongshu.com/explore")
-          look("search 基金","https://www.xiaohongshu.com/search_result?keyword=%E5%9F%BA%E9%87%91&source=web_explore_feed")
-          PY
+          python scripts/probe_xhs_cloud.py \
+            --keywords "${{ github.event.inputs.keywords }}" --show 3
