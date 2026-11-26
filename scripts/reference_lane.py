@@ -70,8 +70,8 @@ def _parse_rss(xml_text):
         if not body:
             continue
         items.append({
-            "title": truncate(_strip_html(title), 60),
-            "text": truncate(body, 400),
+            "title": _strip_html(title),
+            "text": body[:1500],
             "creator": creator,
             "link": link,
         })
@@ -271,7 +271,10 @@ def build(cfg, dict_obj):
         ids = [m["id"] for m in r["matched"] if dict_obj.is_investable(m["id"])]
         for aid in ids:
             mentions[aid] = mentions.get(aid, 0) + 1
-        posts.append({"title": it["title"] or truncate(it["text"], 40),
+        posts.append({"title": it["title"],
+                      "text": it["text"],
+                      "link": it["link"],
+                      "creator": it.get("creator") or "",
                       "assets": [dict_obj.name_of(a) for a in ids]})
 
     matched_total = sum(mentions.values())
