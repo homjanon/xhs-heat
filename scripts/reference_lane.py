@@ -135,6 +135,100 @@ def fetch_em_popularity(cfg, limit=20):
     return {"ok": True, "items": items, "note": ""}
 
 
+def fetch_ths_hot(cfg, limit=100):
+    """同花顺热榜（A股 100 只）：自带名称、热度值、涨跌幅、概念标签、排名变化。"""
+    src = None
+    for s in cfg["lanes"]["reference"]["sources"]:
+        if s["id"] == "ths_hot":
+            src = s
+            break
+    url = (src or {}).get("url") or (
+        "https://dq.10jqka.com.cn/fuyao/hot_list_data/out/hot_list/v1/stock"
+        "?stock_type=a&type=hour&list_type=normal")
+    code, body = http_get(url, timeout=15, retries=1,
+                          headers={"Referer": "https://eq.10jqka.com.cn/"})
+    if code != 200:
+        log("  ⚠️ 同花顺热榜 HTTP %s" % code)
+        return {"ok": False, "items": [], "note": "HTTP %s" % code}
+    try:
+        data = json.loads(decode(body))
+    except ValueError:
+        return {"ok": False, "items": [], "note": "响应非 JSON"}
+    rows = ((data.get("data") or {}).get("stock_list") or [])[:limit]
+    items = []
+    for r in rows:
+        tag = r.get("tag") or {}
+        items.append({
+            "code": str(r.get("code") or "").zfill(6),
+            "name": r.get("name") or "",
+            "rank": int(r.get("order") or 0),
+            "heat": float(r.get("rate") or 0),
+            "chg_pct": round(float(r.get("rise_and_fall") or 0), 2),
+            "rank_change": r.get("hot_rank_chg"),
+            "concepts": [c for c in (tag.get("concept_tag") or []) if c],
+            "tag": tag.get("popularity_tag") or "",
+        })
+    log("  ✅ 同花顺热榜：%d 只（%s 等）" % (len(items), items[0]["name"] if items else "-"))
+    return {"ok": True, "items": items, "note": ""}
+
+
+def merge_popularity(em_items, ths_items, limit=30):
+    """合并两榜：代码对齐，双榜共振单独标记。"""
+    em = {}
+    for x in em_items:
+        c = str(x.get("code") or "").upper()
+        c = c[2:] if len(c) > 6 and c[:2] in ("SZ", "SH", "BJ") else c
+        if len(c) == 6:
+            em[c] = x
+    ths = {x["code"]: x for x in ths_items if x.get("code")}
+
+    codes = set(em) | set(ths)
+    need_names = [c for c in codes if not (ths.get(c) or {}).get("name")]
+    names = _quote_names([("sh" if c.startswith(("6", "9")) else "sz") + c for c in need_names]) if need_names else {}
+
+    rows = []
+    for c in codes:
+        e = em.get(c) or {}
+        t = ths.get(c) or {}
+        em_rank = e.get("rank")
+        ths_rank = t.get("rank")
+        ranks = [r for r in (em_rank, ths_rank) if r]
+        if not ranks:
+            continue
+        best = min(ranks)
+        rows.append({
+            "code": c,
+            "name": (t.get("name") or names.get(("sh" if c.startswith(("6", "9")) else "sz") + c) or ""),
+            "em_rank": em_rank,
+            "ths_rank": ths_rank,
+            "best_rank": best,
+            "both": bool(em_rank and ths_rank and em_rank <= 20 and ths_rank <= 20),
+            "diverge": bool(em_rank and ths_rank and abs(em_rank - ths_rank) >= 20),
+            "heat": t.get("heat"),
+            "chg_pct": t.get("chg_pct"),
+            "rank_change": t.get("rank_change"),
+            "concepts": t.get("concepts") or [],
+            "tag": t.get("tag") or "",
+        })
+    rows.sort(key=lambda x: (not x["both"], x["best_rank"]))
+    return rows[:limit]
+
+
+def build_concepts(stocks, top=12):
+    """概念热度：两榜个股的概念标签按出现次数聚合。"""
+    from collections import Counter
+    cnt = Counter()
+    members = {}
+    for s in stocks:
+        for c in s.get("concepts") or []:
+            cnt[c] += 1
+            members.setdefault(c, []).append(s["name"])
+    out = []
+    for name, n in cnt.most_common(top):
+        out.append({"name": name, "count": n, "stocks": members[name][:4]})
+    return out
+
+
 def _quote_names(codes):
     """腾讯行情批量取名称（1 次请求 20 只，GBK）。"""
     if not codes:
@@ -164,7 +258,11 @@ def build(cfg, dict_obj):
         return {"ok": False, "note": "对照车道未启用"}
 
     hots = fetch_xueqiu_hots(cfg, dict_obj)
-    pop = fetch_em_popularity(cfg)
+    pop = fetch_em_popularity(cfg, limit=100)
+    ths = fetch_ths_hot(cfg)
+    all_stocks = merge_popularity(pop.get("items") or [], ths.get("items") or [], limit=100000)
+    stocks = all_stocks[:30]
+    concepts = build_concepts(all_stocks)
 
     mentions = {}
     posts = []
@@ -193,9 +291,11 @@ def build(cfg, dict_obj):
                     "note": hots["instance"] or "；".join(hots["errors"][:2])})
     sources.append({"id": "em_popularity", "name": "东财人气榜", "ok": pop["ok"],
                     "items": len(pop["items"]), "note": pop.get("note", "")})
+    sources.append({"id": "ths_hot", "name": "同花顺热榜", "ok": ths["ok"],
+                    "items": len(ths["items"]), "note": ths.get("note", "")})
 
     return {
-        "ok": hots["ok"] or pop["ok"],
+        "ok": hots["ok"] or pop["ok"] or ths["ok"],
         "generated_at": None,
         "sources": sources,
         "gate": gate,
@@ -203,6 +303,11 @@ def build(cfg, dict_obj):
                            for aid, c in sorted(mentions.items(), key=lambda x: -x[1])},
         "xueqiu_posts": posts[:10],
         "em_popularity": pop["items"],
+        "stocks": stocks,
+        "concepts": concepts,
+        "both_count": sum(1 for s in all_stocks if s["both"]),
+        "diverge_count": sum(1 for s in all_stocks if s["diverge"]),
+        "total_stocks": len(all_stocks),
     }
 
 
