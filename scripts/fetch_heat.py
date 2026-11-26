@@ -582,9 +582,27 @@ def carry_over(cfg, date, args, t0, meta):
     step("采集中断：沿用上一期 + 水印")
     prev = read_json(os.path.join(DOCS, "latest.json"))
     if not prev:
-        log("❌ 无当日采集件，也没有历史产物 → 无法出榜")
-        log("   采集件应放在 inbox/%s.jsonl(.gz)" % date)
-        return 1
+        log("⚠️ 首次运行：无当日采集件，也没有历史产物 → 写空态看板（等待首批数据）")
+        empty = {
+            "schema": 2, "project": "xhs-heat", "date": date,
+            "generated_at": now_cn().isoformat(timespec="seconds"),
+            "status": "empty", "stale": True,
+            "stale_note": "尚无采集数据：%s。跑一次采集后看板会自动填入。" % meta.get("reason", "inbox 为空"),
+            "caliber": {"mode": "bootstrap", "history_days": 0, "extract": "none",
+                        "intent": "none", "window_days": 0, "degraded": True},
+            "stats": {"raw_notes": 0, "effective": 0, "marketing_ratio": 0, "assets": 0},
+            "quality": {"passed": False, "checks": [
+                {"name": "数据", "value": "无", "threshold": "≥1 条", "ok": False,
+                 "note": "首次运行，等待采集"}]},
+            "leaderboard": [], "surge": [], "newcomers": [], "events_recent": [],
+            "reference": {}, "candidates": [], "disclaimer": cfg["compliance"]["disclaimer"],
+        }
+        write_json(os.path.join(DOCS, "latest.json"), empty, indent=None)
+        report = {"ts": now_cn().isoformat(timespec="seconds"), "date": date,
+                  "status": "empty", "reason": meta.get("reason"),
+                  "elapsed_s": round(time.time() - t0, 1)}
+        write_json(os.path.join(REPORT_DIR, now_cn().strftime("%Y%m%dT%H%M%S") + ".json"), report, indent=None)
+        return 0
 
     prev_date = prev.get("date")
     prev["status"] = "stale"
