@@ -310,6 +310,25 @@ def write_outputs(payload, cfg, date, ranked):
 
 
 def render_push(payload, cfg):
+    if payload.get("status") == "reference_only":
+        ref = payload.get("reference") or {}
+        stocks = ref.get("stocks") or []
+        concepts = ref.get("concepts") or []
+        lines = ["📊 全市场人气榜（参考车道）— %s" % payload["date"], ""]
+        lines.append("⚠️ 小红书账号恢复中，本期只有参考车道")
+        lines.append("")
+        lines.append("🔥 散户人气 Top8（东财/同花顺双榜合并）")
+        for i, x in enumerate(stocks[:8], 1):
+            mark = "★" if x.get("both") else " "
+            chg = x.get("chg_pct")
+            lines.append(" %d.%s %s %s%%" % (i, mark, x["name"], ("%+.2f" % chg) if chg is not None else "-"))
+        if concepts:
+            lines.append("")
+            lines.append("🧩 热门概念：" + " / ".join("%s(%d)" % (c["name"], c["count"]) for c in concepts[:6]))
+        lines.append("")
+        lines.append(payload["disclaimer"])
+        return "\n".join(lines) + "\n"
+
     lines = ["📊 小红书投资热度榜 — %s" % payload["date"], ""]
     if payload.get("stale"):
         lines.append("⚠️ %s" % payload.get("stale_note", "今日采集中断，沿用上一期"))
@@ -371,6 +390,9 @@ def run(args):
     load_secrets()
     cfg = load_config()
     date = args.date or today_str()
+
+    if args.reference_only:
+        return run_reference_only(cfg, date, args, t0)
 
     step("1/8 读取采集件 · %s" % date)
     notes_raw, meta = load_notes(date, args)
@@ -492,6 +514,68 @@ def run(args):
     log("   榜单前五：%s" % "、".join("%s(%.0f)" % (r["name"], r["heat"]) for r in ranked[:5]))
     log("   看板产物：docs/latest.json / docs/daily/%s.json / docs/data/agg/%s.json" % (date, date))
     log("   耗时 %.1fs" % (time.time() - t0))
+    return 0
+
+
+def run_reference_only(cfg, date, args, t0):
+    """参考车道独立成榜：小红书不可用时，先让页面有真实内容。"""
+    step("参考车道模式 · %s" % date)
+    adict = AssetDict()
+    try:
+        ref = reference_lane.build(cfg, adict)
+    except Exception as e:
+        log("❌ 参考车道失败：%s" % e)
+        ref = {"ok": False, "note": str(e)}
+    ref["generated_at"] = now_cn().isoformat(timespec="seconds")
+
+    stocks = ref.get("stocks") or []
+    concepts = ref.get("concepts") or []
+    quality = {
+        "passed": bool(stocks),
+        "checks": [
+            {"name": "东财人气榜", "value": len((ref.get("em_popularity") or [])), "threshold": "≥20",
+             "ok": len(ref.get("em_popularity") or []) >= 20, "note": "个股级散户关注度"},
+            {"name": "同花顺热榜", "value": len(stocks), "threshold": "≥20",
+             "ok": len(stocks) >= 20, "note": "第二源，用于交叉验证"},
+            {"name": "雪球热帖", "value": len(ref.get("xueqiu_posts") or []), "threshold": "≥5",
+             "ok": len(ref.get("xueqiu_posts") or []) >= 5, "note": "资产级提及"},
+        ],
+    }
+    payload = {
+        "schema": 2, "project": "xhs-heat", "date": date,
+        "generated_at": now_cn().isoformat(timespec="seconds"),
+        "status": "reference_only", "stale": False,
+        "stale_note": "小红书账号恢复中，本期仅展示参考车道（东财/同花顺人气榜 + 雪球热帖）",
+        "caliber": {"mode": "reference", "history_days": 0, "extract": "none",
+                    "intent": "none", "window_days": 0, "degraded": True},
+        "stats": {"raw_notes": 0, "effective": 0, "marketing_ratio": 0,
+                  "assets": len(concepts), "stocks": len(stocks),
+                  "both_boards": ref.get("both_count", 0)},
+        "quality": quality,
+        "leaderboard": [], "surge": [], "newcomers": [], "events_recent": [],
+        "reference": ref, "candidates": [],
+        "disclaimer": cfg["compliance"]["disclaimer"],
+    }
+    write_json(os.path.join(DOCS, "latest.json"), payload, indent=None)
+    write_json(os.path.join(DAILY_DIR, "%s.json" % date), payload, indent=None)
+
+    idx_path = os.path.join(DATA_DIR, "index.json")
+    idx = read_json(idx_path, default={"dates": []}) or {"dates": []}
+    dates = sorted(set([date] + list(idx.get("dates", []))), reverse=True)[:180]
+    write_json(idx_path, {"dates": dates, "updated": date})
+
+    write_text(os.path.join(DOCS, "push", "%s.txt" % date), render_push(payload, cfg))
+    report = {"ts": now_cn().isoformat(timespec="seconds"), "date": date,
+              "kind": "reference_only", "elapsed_s": round(time.time() - t0, 1),
+              "sources": ref.get("sources"), "stocks": len(stocks),
+              "concepts": [c["name"] for c in concepts[:8]]}
+    write_json(os.path.join(REPORT_DIR, now_cn().strftime("%Y%m%dT%H%M%S") + ".json"), report, indent=None)
+
+    log("  ✅ 人气榜 %d 只（双榜共振 %d 只）· 概念 %d 个 · 雪球热帖 %d 条"
+        % (len(stocks), ref.get("both_count", 0), len(concepts), len(ref.get("xueqiu_posts") or [])))
+    for c in concepts[:5]:
+        log("     · %s（%d 只）" % (c["name"], c["count"]))
+    log("✅ 已输出参考车道看板 · 耗时 %.1fs" % (time.time() - t0))
     return 0
 
 
@@ -671,6 +755,8 @@ def main(argv=None):
     ap.add_argument("--demo", action="store_true", help="使用内置样本（离线验证）")
     ap.add_argument("--no-llm", action="store_true", help="强制词典口径")
     ap.add_argument("--skip-reference", action="store_true", help="跳过对照车道")
+    ap.add_argument("--reference-only", action="store_true",
+                    help="只跑参考车道（东财/同花顺人气榜 + 雪球热帖），不读 inbox")
     args = ap.parse_args(argv)
     try:
         return run(args)
