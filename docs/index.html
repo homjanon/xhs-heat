@@ -157,7 +157,7 @@ td.num{text-align:right;white-space:nowrap}
 
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink4);line-height:1.8}
 
-.empty{text-align:center;padding:60px 20px;color:var(--ink3)}
+.empty{text-align:center;padding:26px 20px;color:var(--ink3)}
 .empty h2{border:0;justify-content:center}
 
 @media(max-width:640px){
@@ -312,8 +312,9 @@ function render(){
   $("#next").disabled = STATE.idx <= 0;
 
   const st = d.stats || {}, cal = d.caliber || {};
-  const statusChip = d.stale ? '<span class="chip bad">采集中断·沿用上期</span>'
-    : (d.status === "degraded" ? '<span class="chip warn">降级运行</span>' : '<span class="chip ok">正常</span>');
+  const statusChip = d.status === "empty" ? '<span class="chip warn">等待首批数据</span>'
+    : (d.stale ? '<span class="chip bad">采集中断·沿用上期</span>'
+    : (d.status === "degraded" ? '<span class="chip warn">降级运行</span>' : '<span class="chip ok">正常</span>'));
   const calChip = cal.mode === "bootstrap"
     ? '<span class="chip line">冷启动口径</span>'
     : '<span class="chip line">滚动分位</span>';
@@ -327,10 +328,11 @@ function render(){
   ].join("");
 
   $("#banner").innerHTML = d.stale
-    ? '<div class="banner bad">'+ESC(d.stale_note||"今日采集中断，沿用上一期数据")+'</div>'
+    ? '<div class="banner '+(d.status==="empty"?"":"bad")+'">'+ESC(d.stale_note||"今日采集中断，沿用上一期数据")+'</div>'
     : (cal.mode==="bootstrap" ? '<div class="banner">冷启动第 '+(cal.history_days+1)+' 天：历史不足 '+cal.min_days_required+' 天，热度用截面归一、动量取中性。此期间数值仅用于排序，不与日后滚动口径比较。</div>' : '');
 
-  $("#boardHint").textContent = "▲ 上升 ≥3 · ▼ 下降 ≥3 · 点开任一行看代表笔记与 60 日曲线";
+  $("#boardHint").textContent = (d.leaderboard && d.leaderboard.length)
+    ? "▲ 上升 ≥3 · ▼ 下降 ≥3 · 点开任一行看代表笔记与 60 日曲线" : "";
   renderBoard(d);
   renderSurge(d);
   renderNewcomers(d);
