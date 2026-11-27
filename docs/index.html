@@ -221,6 +221,11 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   .cards{grid-template-columns:1fr}
   .ref-grid{grid-template-columns:1fr}
   nav{overflow-x:auto}
+  /* 标题与按钮不挤在一起 */
+  h2{flex-wrap:wrap}
+  h2 .toggle{margin-left:0;margin-top:4px}
+  .duo{flex-direction:column;gap:2px}
+  .duo .sep{display:none}
   /* 手机上保留「往期」入口，隐藏前后翻页（评审 P2-11） */
   nav .datepick{display:flex}
   nav .datepick #prev, nav .datepick #next, nav .datepick #dLabel{display:none}
@@ -277,7 +282,7 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <div class="chips" id="conceptChips"></div>
 
   <h2>散户人气榜 <span class="n">东财 × 同花顺，双列名次交叉验证</span>
-    <button class="toggle" id="togglePop">展开个股明细</button></h2>
+    <button class="toggle" id="togglePop">展开个股</button></h2>
   <div class="srcline" id="popSrc"></div>
   <div id="popWrap" class="hidden">
     <table class="pop">
@@ -615,7 +620,7 @@ function renderEvents(d){
 $("#togglePop").addEventListener("click", function(){
   const w = $("#popWrap");
   const hidden = w.classList.toggle("hidden");
-  this.textContent = hidden ? "展开个股明细" : "收起个股明细";
+  this.textContent = hidden ? "展开个股" : "收起个股";
 });
 
 /* 往期抽屉（移动端也能用） */
