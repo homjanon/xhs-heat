@@ -266,6 +266,7 @@ def build_payload(date, ranked, surge, newbs, ref, lane_tags, stats, quality,
         "events_recent": recent_events,
         "reference": ref,
         "candidates": candidates,
+        "breakouts": (heat_mod.load_events().get("breakouts") or [])[:30],
         "disclaimer": config["compliance"]["disclaimer"],
     }
 
@@ -531,6 +532,15 @@ def run_reference_only(cfg, date, args, t0):
         ref = {"ok": False, "note": str(e)}
     ref["generated_at"] = now_cn().isoformat(timespec="seconds")
 
+    # 出圈事件入事件库（与小红书事件分开存）
+    try:
+        import douyin_hot
+        items = (ref.get("douyin") or {}).get("items") or []
+        n_br = douyin_hot.record_breakouts(items, date)
+        log("  ✅ 出圈事件入库 %d 条（累计 %d）" % (len(items), n_br))
+    except Exception as e:
+        log("  ⚠️ 出圈事件入库失败：%s" % e)
+
     stocks = ref.get("stocks") or []
     concepts = ref.get("concepts") or []
     quality = {
@@ -557,6 +567,7 @@ def run_reference_only(cfg, date, args, t0):
         "quality": quality,
         "leaderboard": [], "surge": [], "newcomers": [], "events_recent": [],
         "reference": ref, "candidates": [],
+        "breakouts": (heat_mod.load_events().get("breakouts") or [])[:30],
         "disclaimer": cfg["compliance"]["disclaimer"],
     }
     write_json(os.path.join(DOCS, "latest.json"), payload, indent=None)
