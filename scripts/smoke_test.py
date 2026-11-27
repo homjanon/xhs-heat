@@ -46,7 +46,11 @@ def main():
     # 1 配置
     for key in ("lanes", "asset_dict", "llm", "hard_rules", "heat", "quality_gates", "events", "output", "compliance"):
         check("配置含 %s" % key, key in cfg)
-    check("xhs 车道启用", cfg["lanes"]["xhs"].get("enabled") is True)
+    xhs = cfg["lanes"]["xhs"]
+    check("xhs 车道状态合法",
+          xhs.get("enabled") is True or xhs.get("status") == "paused",
+          "停采中（%s）" % (xhs.get("status_note") or "")[:40] if xhs.get("status") == "paused" else "")
+    check("停采时有说明", bool(xhs.get("status_note")) if xhs.get("status") == "paused" else True)
     check("入口词 ≥ 20 个", len(cfg["lanes"]["xhs"]["mode_a"]["entry_keywords"]) >= 20,
           "%d 个" % len(cfg["lanes"]["xhs"]["mode_a"]["entry_keywords"]))
     check("禁止 GitHub schedule", cfg["schedule"].get("use_github_schedule") is False)
