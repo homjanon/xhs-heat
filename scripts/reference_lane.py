@@ -261,8 +261,10 @@ def _quote_names(codes):
 # ---------------------------------------------------------------------------
 # 汇总
 # ---------------------------------------------------------------------------
-def build(cfg, dict_obj):
+def build(cfg, dict_obj, date=None):
     lane = cfg["lanes"]["reference"]
+    from common import today_str as _today
+    date = date or _today()
     if not lane.get("enabled"):
         return {"ok": False, "note": "对照车道未启用"}
 
@@ -297,6 +299,21 @@ def build(cfg, dict_obj):
                 else "参考车道仅匹配 %d 处提及（< %d），本期不做双热/独热判定" % (matched_total, min_mentions),
     }
 
+    # 出圈层（抖音）与资金流（ETF）：失败不影响主榜
+    douyin, etf = {"ok": False, "items": [], "note": "未启用"}, {"ok": False, "rows": [], "note": "未启用"}
+    if lane.get("douyin", {}).get("enabled", True):
+        try:
+            import douyin_hot
+            douyin = douyin_hot.build(cfg, dict_obj, date=date)
+        except Exception as e:
+            douyin = {"ok": False, "items": [], "note": "异常: %s" % truncate(str(e), 60)}
+    if lane.get("etf", {}).get("enabled", True):
+        try:
+            import etf_flow
+            etf = etf_flow.build(cfg, dict_obj, date=date)
+        except Exception as e:
+            etf = {"ok": False, "rows": [], "note": "异常: %s" % truncate(str(e), 60)}
+
     sources = []
     sources.append({"id": "xueqiu_hots", "name": "雪球热帖", "ok": hots["ok"],
                     "items": len(hots["items"]),
@@ -305,9 +322,13 @@ def build(cfg, dict_obj):
                     "items": len(pop["items"]), "note": pop.get("note", "")})
     sources.append({"id": "ths_hot", "name": "同花顺热榜", "ok": ths["ok"],
                     "items": len(ths["items"]), "note": ths.get("note", "")})
+    sources.append({"id": "douyin_hot", "name": "抖音热榜", "ok": douyin.get("ok", False),
+                    "items": len(douyin.get("items") or []), "note": douyin.get("note", "")})
+    sources.append({"id": "etf_flow", "name": "ETF 资金流", "ok": etf.get("ok", False),
+                    "items": etf.get("count", 0), "note": etf.get("note", "")})
 
     return {
-        "ok": hots["ok"] or pop["ok"] or ths["ok"],
+        "ok": hots["ok"] or pop["ok"] or ths["ok"] or douyin.get("ok") or etf.get("ok"),
         "generated_at": None,
         "sources": sources,
         "gate": gate,
@@ -318,6 +339,8 @@ def build(cfg, dict_obj):
         "stocks": stocks,
         "concepts": concepts,
         "ths_hot": (ths.get("items") or [])[:20],
+        "douyin": douyin,
+        "etf": etf,
         "both_count": sum(1 for s in all_stocks if s["both"]),
         "diverge_count": sum(1 for s in all_stocks if s["diverge"]),
         "total_stocks": len(all_stocks),
