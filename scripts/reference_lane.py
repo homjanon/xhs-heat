@@ -16,10 +16,12 @@ xhs-heat · reference_lane.py
 
 import html
 import json
+import os
 import re
+from collections import defaultdict
 
-from common import (decode, http_get, http_post_json, log, norm_text,
-                    truncate)
+from common import (DATA_DIR, decode, http_get, http_post_json, log, norm_text,
+                    now_cn, read_json, today_str, truncate, write_json)
 
 TAG_DOUBLE = "double_hot"        # 双热：xhs 高 + 对照高
 TAG_XHS_ONLY = "xhs_only_hot"    # 独热：xhs 高 + 对照冷
@@ -172,6 +174,46 @@ def fetch_ths_hot(cfg, limit=100):
     return {"ok": True, "items": items, "note": ""}
 
 
+POP_SNAP_DIR = os.path.join(DATA_DIR, "popularity")
+
+
+def _prev_snapshot(date):
+    """取 date 之前最近的人气榜快照；没有返回 None。"""
+    if not os.path.isdir(POP_SNAP_DIR):
+        return None
+    files = [f[:-5] for f in os.listdir(POP_SNAP_DIR) if f.endswith(".json") and f[:-5] < date]
+    if not files:
+        return None
+    return read_json(os.path.join(POP_SNAP_DIR, sorted(files)[-1] + ".json"))
+
+
+def compute_trends(stocks, date):
+    """与上一份快照比：新进榜 / 掉榜 / 名次变化。首日快照返回 None。"""
+    prev = _prev_snapshot(date)
+    if not prev or not (prev.get("stocks") or []):
+        return None
+    prev_by_code = {str(x.get("code")): x for x in prev["stocks"]}
+    prev_date = prev.get("date")
+    new_in, dropped, changed = [], [], 0
+    for x in stocks:
+        p = prev_by_code.get(str(x.get("code")))
+        if not p:
+            new_in.append(x)
+            continue
+        pr = p.get("best_rank")
+        if pr and x.get("best_rank"):
+            x["prev_rank"] = pr
+            x["rank_delta"] = int(pr) - int(x["best_rank"])   # 正 = 上升
+            if abs(x["rank_delta"]) >= 5:
+                changed += 1
+        prev_by_code.pop(str(x.get("code")), None)
+    for code, p in prev_by_code.items():
+        dropped.append({"code": code, "name": p.get("name") or "", "prev_rank": p.get("best_rank")})
+    dropped.sort(key=lambda x: x.get("prev_rank") or 999)
+    return {"prev_date": prev_date, "new_in": new_in[:8], "dropped": dropped[:8],
+            "moved": changed, "is_first": False}
+
+
 def _market_prefix(code):
     """6/9 开头 = 沪市；4/8 开头 = 北交所；其余 = 深市。"""
     if code.startswith(("6", "9")):
@@ -232,9 +274,16 @@ def build_concepts(stocks, top=12):
         for c in s.get("concepts") or []:
             cnt[c] += 1
             members.setdefault(c, []).append(s["name"])
+    chg = defaultdict(list)
+    for x in stocks:
+        for c in x.get("concepts") or []:
+            if x.get("chg_pct") is not None:
+                chg[c].append(float(x["chg_pct"]))
     out = []
     for name, n in cnt.most_common(top):
-        out.append({"name": name, "count": n, "stocks": members[name][:4]})
+        c = chg.get(name) or []
+        out.append({"name": name, "count": n, "stocks": members[name][:4],
+                    "avg_chg": round(sum(c) / len(c), 2) if c else None})
     return out
 
 
@@ -273,7 +322,25 @@ def build(cfg, dict_obj, date=None):
     ths = fetch_ths_hot(cfg)
     all_stocks = merge_popularity(pop.get("items") or [], ths.get("items") or [], limit=100000)
     stocks = all_stocks[:30]
+
+    # 概念涨跌幅（同花顺 rise_and_fall 按概念聚合）+ 概念→资产映射
     concepts = build_concepts(all_stocks)
+    cmap = (cfg.get("asset_dict") or {}).get("concept_map") or {}
+    for c in concepts:
+        m = c.get("avg_chg")
+        if m is not None:
+            c["avg_chg"] = m
+        c["assets"] = [dict_obj.name_of(aid) for aid in (cmap.get(c["name"]) or [])]
+
+    # 每日快照 + 日环比（第二天起解锁：新进榜/掉榜/名次变化）
+    os.makedirs(POP_SNAP_DIR, exist_ok=True)
+    write_json(os.path.join(POP_SNAP_DIR, "%s.json" % date),
+               {"date": date, "stocks": all_stocks,
+                "fetched_at": now_cn().isoformat(timespec="seconds")}, indent=None)
+    trends = compute_trends(all_stocks, date)
+    if trends is None:
+        trends = {"prev_date": None, "new_in": [], "dropped": [], "moved": 0, "is_first": True}
+    trends["stocks_total"] = len(all_stocks)
 
     mentions = {}
     posts = []
@@ -341,6 +408,7 @@ def build(cfg, dict_obj, date=None):
         "ths_hot": (ths.get("items") or [])[:20],
         "douyin": douyin,
         "etf": etf,
+        "trends": trends,
         "both_count": sum(1 for s in all_stocks if s["both"]),
         "diverge_count": sum(1 for s in all_stocks if s["diverge"]),
         "total_stocks": len(all_stocks),
