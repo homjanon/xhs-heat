@@ -145,7 +145,15 @@
         "min_asset_mentions": 2,
         "comment": "门槛按雪球热帖实际体量定（单次 10 条，实测可匹配 4–12 处提及）。总提及 <6 或单资产 <2 → 不判双热/独热，标『参照样本不足』，绝不硬猜"
       },
-      "note": "股吧路由 2026-11-26 实测在 4 个公共实例全 404（主仓已删）；雪球直连 API 命中阿里云 WAF，故走 RSSHub 实例"
+      "note": "股吧路由 2026-11-26 实测在 4 个公共实例全 404（主仓已删）；雪球直连 API 命中阿里云 WAF，故走 RSSHub 实例",
+      "douyin": {
+        "enabled": true,
+        "note": "出圈层：不进热度加权，单独记事件"
+      },
+      "etf": {
+        "enabled": true,
+        "note": "资金流：腾讯行情批量取 ETF 成交额，与自身 5 日均值比得量比"
+      }
     }
   },
   "asset_dict": {
@@ -742,8 +750,8 @@
   },
   "heat": {
     "weights": {
-      "volume": 0.45,
-      "engagement": 0.35,
+      "breadth": 0.45,
+      "depth": 0.35,
       "momentum": 0.2
     },
     "engagement_weights": {
@@ -753,10 +761,11 @@
     },
     "engagement_log_base": 10,
     "norm_window_days": 90,
-    "norm_method": "rolling_percentile",
-    "bootstrap_min_days": 8,
+    "norm_method": "rolling_percentile_calendar",
+    "bootstrap_min_days": 30,
     "bootstrap_scaling": "log1p_cross_section",
-    "comment": "90 日分位数归一：平台内容总量年增 ~100%（白皮书 +107%），绝对值必然虚高。历史不足 8 天时走冷启动口径（截面 log 归一、动量中性 0.5），并在产物标 caliber=bootstrap"
+    "comment": "v3（2026-11-27）：广度=去重作者数、深度=单篇互动中位数（原来 V=笔记数/E=互动总和，两者共线，45+35 实际等于同一信号 80%）。所有时序一律日历对齐，缺数据即缺。bootstrap 8→30 天。",
+    "cap_iterations": 2
   },
   "quality_gates": {
     "min_effective_notes": 200,
@@ -819,7 +828,9 @@
     "reports_days": 90,
     "daily_days": 365,
     "agg_days": 400,
-    "push_days": 90
+    "push_days": 90,
+    "douyin_days": 180,
+    "etf_days": 180
   },
   "copy": {
     "title": "资产热度雷达",
