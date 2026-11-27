@@ -19,7 +19,8 @@
 | 东财人气榜 | ✅ 每日 | 散户关注度（个股级，含排名变化） | 100 只 |
 | 同花顺热榜 | ✅ 每日 | 第二源（热度值/涨跌幅/概念标签） | 100 只 |
 | 雪球热帖 | ✅ 每日 | 资产级提及（旁证，样本薄） | 约 10 条 |
-| 抖音热榜 | 🟡 计划中 | 出圈事件（不进热度加权） | 50 条 |
+| 抖音热榜 | ✅ 每日 | 出圈事件（不进热度加权） | 50 条 |
+| ETF 资金流 | ✅ 每日 | 成交额 + 量比（17 只映射到资产的 ETF） | 17 只 |
 | 小红书 | ⏸ 停采 | 讨论量/互动/意图 | — |
 | 雪球 screener | ❌ 放弃 | 实测返回空列表 + 触发 IP 封禁 | — |
 
@@ -102,6 +103,8 @@ python scripts/probe_sources.py                      # 探测各源健康
 | `docs/push/` | 90 天 | — |
 | `docs/daily/` | 365 天 | — |
 | `docs/data/agg/` | 400 天 | 热度分位基线，留最长 |
+| `docs/data/douyin/` | 180 天 | 出圈事件历史 |
+| `docs/data/etf/` | 180 天 | ETF 成交额快照（量比依赖它） |
 
 每次发布前自动跑 `scripts/retention.py`；只删白名单目录内的文件，越界直接跳过。
 
@@ -185,6 +188,9 @@ scripts/
   smoke_test.py     离线冒烟（改配置后必跑）
   probe_sources.py  只读健康探测
   probe_xhs_cloud.py 采集探针（实验用，可随时验证 cookie/IP）
+  douyin_hot.py     抖音热榜 → 出圈事件（不进热度加权）
+  etf_flow.py       ETF 成交额 / 量比
+  test_metrics.py   度量层回归（日历对齐 / 正交化 / rebased / cap）
   retention.py      存储上限与到期清理
   collect_xhs.py    MediaCrawler 本地方案（已弃用，仅备用）
 docs/               看板与产物（Pages 根目录）
