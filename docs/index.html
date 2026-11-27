@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#fbfaf8">
-<title>小红书投资热度雷达</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%239c3b2e'/><path d='M8 21l5-6 4 3 6-8' stroke='%23fff' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<title>资产热度雷达 · 资金侧人气 × 社媒侧讨论</title>
 <style>
 :root{
   --ink:#1c1f26; --ink2:#3f4652; --ink3:#6b7280; --ink4:#9aa1ab;
@@ -43,6 +44,12 @@ h1 small{font-size:13px;color:var(--ink3);font-weight:400;margin-left:8px;letter
 .banner{margin:16px 0 0;padding:12px 14px;border-radius:8px;font-size:13.5px;
   background:var(--warn-soft);color:#6b4c10;border-left:3px solid #c99a3a}
 .banner.bad{background:var(--accent-soft);color:#7d2a1f;border-left-color:var(--accent)}
+
+/* ---------- duo line ---------- */
+.duo{margin:12px 0 0;font-size:12.5px;color:var(--ink3);display:flex;gap:10px;flex-wrap:wrap}
+.duo b{color:var(--ink2);font-weight:600}
+.duo .sep{color:var(--line)}
+.duo .muted{color:var(--ink4)}
 
 /* ---------- tabs ---------- */
 nav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:22px 0 0;position:sticky;top:0;
@@ -135,10 +142,11 @@ h2 .n{font-size:11.5px;color:var(--ink4);font-weight:400}
 
 /* ---------- xueqiu posts ---------- */
 .xqlist{list-style:none;margin:0;padding:0}
-.xqlist li{padding:9px 0;border-top:1px solid var(--line2);cursor:pointer}
+.srcline{margin:2px 0 10px;display:flex;flex-wrap:wrap;gap:5px}
+.xqlist li{padding:8px 0;border-top:1px solid var(--line2);cursor:pointer}
 .xqlist li:first-child{border-top:0}
-.xqlist .t{font-size:13.5px;color:var(--ink);display:block;text-decoration:none;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.xqlist .t{font-size:13.5px;color:var(--ink);display:block;text-decoration:none;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.5}
 .xqlist a.t:hover{color:var(--accent);text-decoration:underline}
 .xqlist .body{font-size:12.5px;color:var(--ink3);margin-top:3px;line-height:1.65;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -188,6 +196,19 @@ td.num{text-align:right;white-space:nowrap}
 
 footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink4);line-height:1.8}
 
+.hidden{display:none}
+.toggle{appearance:none;border:1px solid var(--line);background:#fff;border-radius:6px;
+  font-size:11.5px;color:var(--ink2);padding:2px 8px;margin-left:8px;cursor:pointer;font-family:inherit;font-weight:400}
+.toggle:hover{border-color:#cfd3da}
+#histPanel{display:none;position:absolute;right:0;top:100%;margin-top:6px;background:#fff;
+  border:1px solid var(--line);border-radius:9px;box-shadow:0 6px 20px rgba(20,22,28,.08);
+  padding:6px;z-index:20;min-width:150px;max-height:320px;overflow:auto}
+#histPanel.on{display:block}
+#histPanel button{display:block;width:100%;text-align:left;border:0;background:none;
+  padding:6px 9px;font-size:12.5px;color:var(--ink2);cursor:pointer;border-radius:6px;font-family:inherit}
+#histPanel button:hover{background:var(--gray-soft)}
+#histPanel button.cur{color:var(--accent);font-weight:600}
+
 .empty{text-align:center;padding:26px 20px;color:var(--ink3)}
 .empty h2{border:0;justify-content:center}
 
@@ -210,8 +231,13 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
 <div class="wrap">
 
 <header>
-  <div class="kicker">XHS · INVESTMENT HEAT RADAR</div>
-  <h1>小红书投资热度雷达<small id="hDate"></small></h1>
+  <div class="kicker">ASSET HEAT RADAR</div>
+  <h1>资产热度雷达<small id="hDate"></small></h1>
+  <div class="duo">
+    <span><b>资金侧</b> 东财 / 同花顺人气 · 抖音出圈</span>
+    <span class="sep">|</span>
+    <span class="muted"><b>社媒侧</b> 小红书（暂停采集中）</span>
+  </div>
   <div class="meta" id="hMeta"></div>
   <div id="banner"></div>
 </header>
@@ -222,10 +248,12 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <button data-tab="method" aria-selected="false">口径</button>
   <div class="spacer"></div>
   <div class="datepick">
+    <button id="histBtn" title="往期">往期</button>
     <button id="prev" title="上一期">‹</button>
     <span id="dLabel"></span>
     <button id="next" title="下一期">›</button>
   </div>
+  <div id="histPanel"></div>
 </nav>
 
 <!-- ================= 榜单 ================= -->
@@ -243,21 +271,25 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
 
   </div>
 
-  <h2 id="refTitle">参考车道 <span class="n">散户人气 · 双榜交叉验证 · 概念热度</span></h2>
-  <div class="hint" id="refHint"></div>
-  <table class="pop">
-    <thead><tr>
-      <th style="width:30px">#</th><th>名称</th>
-      <th style="width:48px" class="num">东财</th><th style="width:56px" class="num">同花顺</th>
-      <th style="width:60px" class="num">涨幅</th><th>概念</th>
-    </tr></thead>
-    <tbody id="popBody"></tbody>
-  </table>
-
-  <h2>热门概念 <span class="n">两榜个股的概念标签聚合，接近板块级关注度</span></h2>
+  <h2>概念热度 <span class="n">两榜个股的概念标签聚合，接近板块级关注度</span></h2>
   <div class="chips" id="conceptChips"></div>
 
+  <h2>散户人气榜 <span class="n">东财 × 同花顺，双列名次交叉验证</span>
+    <button class="toggle" id="togglePop">展开个股明细</button></h2>
+  <div class="srcline" id="popSrc"></div>
+  <div id="popWrap" class="hidden">
+    <table class="pop">
+      <thead><tr>
+        <th style="width:30px">#</th><th>名称</th>
+        <th style="width:48px" class="num">东财</th><th style="width:56px" class="num">同花顺</th>
+        <th style="width:60px" class="num">涨幅</th><th>概念</th>
+      </tr></thead>
+      <tbody id="popBody"></tbody>
+    </table>
+  </div>
+
   <h2>雪球热帖 <span class="n">资产级提及，可作跨车道对照</span></h2>
+  <div class="srcline" id="xqSrc"></div>
   <ul class="xqlist" id="xqList"></ul>
 
   <div id="xhsExtra">
@@ -279,33 +311,40 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
 <!-- ================= 口径 ================= -->
 <section class="panel" id="p-method">
   <div class="prose">
-    <h3>它是什么</h3>
-    <p>每日自动聚合小红书上被讨论最多的投资资产，记录「热到什么程度、在哪个讨论阶段」。<strong>描述型监测：不做预测、不做反向操作、不评判人群、不做回测。</strong></p>
+    <h3>这是什么</h3>
+    <p>两条腿分开走的资产热度观察：<strong>资金侧</strong>看散户真金白银的关注（东财人气榜、同花顺热榜），<strong>社媒侧</strong>看讨论强度（小红书，当前暂停）。两套口径各有单位，<strong>不做直接换算，也不加总成一个分数</strong>。</p>
+    <p>它只描述「今天大家在关注什么」，不做预测、不评判人群、不构成任何操作建议。</p>
 
-    <h3>热度公式</h3>
-    <div class="formula">Heat = 100 × ( 0.45·V + 0.35·E + 0.20·M )
-  <span class="c">V</span> 讨论量：提及该资产的自然笔记数（营销已剔除；多资产按 1/n 分摊）
-  <span class="c">E</span> 互动量：赞×1 + 藏×3 + 评×2 的对数和；单条贡献上限 10%
-  <span class="c">M</span> 动量：讨论量的 3 日增速，截断到 [-2, +3] 防爆表</div>
-    <p style="margin-top:10px">历史满 8 天后，V/E 改用 <strong>90 日滚动分位数</strong>归一（平台内容总量年增约一倍，绝对值必然虚高）。历史不足时走<strong>冷启动口径</strong>（截面 log 归一、动量取中性 0.5），页头会明确标注 —— 两种口径的数值不能直接比。</p>
+    <h3>资金侧指标</h3>
+    <div class="formula">概念热度 = 两榜个股的概念标签按出现次数聚合
+  <span class="c">例：CPO 11 只 = 东财/同花顺两榜里有 11 只个股带「共封装光学(CPO)」标签</span>
+  <span class="c">这是目前最接近「板块级关注度」的免费指标</span>
 
-    <h3>意图五分类</h3>
-    <p><code>学</code> 科普配置 · <code>买</code> 攻略上车 · <code>晒</code> 晒收益 · <code>愁</code> 亏损求助 · <code>广</code> 疑似营销。只描述讨论阶段，不绑定任何操作含义；营销笔记不进热度分，但占比照常展示（榜单成色由你判断）。</p>
+双榜共振 = 同一只股票同时进东财 Top20 与同花顺 Top20
+分歧   = 两榜名次相差 ≥ 20（一个源很热、另一个没跟上）</div>
+    <p style="margin-top:10px">个股明细默认折叠——30 行股票名的信息量远不如一句"CPO 11 只"。要看个股再展开。</p>
 
-    <h3>双车道标记</h3>
+    <h3>社媒侧（小红书）· 暂停中</h3>
+    <p>2026-11-27 起停采：账号收到官方「疑似第三方工具自动浏览」的违规预警。为避免封号，至少静默 14 天，期间不换号、不重试、不删笔记、不改资料（同设备指纹会关联新号）。</p>
+    <p>停采期间页面照常出——这是架构层面就设计好的降级路径，不是事故。恢复后按「每周 2 次 × 6 个核心词」先验证一周。</p>
+    <p style="color:var(--ink3);font-size:12.5px">原热度的算法（保留，恢复后启用）：<code>Heat = 100 × (0.45·V + 0.35·E + 0.20·M)</code>，V 讨论量 / E 互动量 / M 3 日动量；历史满 30 天后用 90 日滚动分位归一，之前走冷启动截面归一。</p>
+
+    <h3>抖音出圈层 · 计划中</h3>
+    <p>抖音热榜是完全公开、无需登录的接口（实测 50 条/次）。它不该进热度加权——99% 的日子资产不在榜上，值是 0 或 1，与连续热度混合会制造巨大跳变。正确用法是「事件」：<code>资产在抖音热榜第 7 位（热值 935 万）</code>，这是唯一有绝对量纲的跨人群信号。</p>
+
+    <h3>数据来源与口径</h3>
     <ul>
-      <li><span class="dot double"></span> 双热：小红书与雪球同时提及，多半是全网共振</li>
-      <li><span class="dot only"></span> 独热：只有小红书热，多为生活方式型话题（攒金豆、存金条）</li>
-      <li><span class="dot ref"></span> 对照冷/样本不足：参考车道匹配不到或样本太小</li>
+      <li>东财人气榜：个股级散户关注度，100 只，含排名变化</li>
+      <li>同花顺热榜：第二源，100 只，自带热度值、涨跌幅、概念标签</li>
+      <li>雪球热帖：资产级提及，单次约 10 条——样本薄，只作旁证；匹配 &lt;6 处或单资产 &lt;2 次时不判定</li>
+      <li>雪球 screener（follow7d/tweet）实测返回空列表且触发 IP 封禁，已放弃</li>
     </ul>
-    <p>参考车道当前只有「雪球热帖」提供资产级可比口径，单次仅 10 条，因此设有门槛：总提及 &lt;6 或单资产 &lt;2 时不判定，标「参照样本不足」。宁可不判，也不硬猜。</p>
 
-    <h3>合规与口径声明</h3>
+    <h3>合规</h3>
     <ul>
-      <li>只采公开笔记的标题/正文/互动量与发布时间；作者仅存哈希，不存昵称、头像、主页</li>
-      <li>不执行任何互动操作（点赞/关注/私信），全局 QPS ≤0.5，单词 ≤3 页</li>
-      <li>每日 16:40 采集（避开盘中与收盘瞬时流量污染）</li>
-      <li>Cookie 与 API Key 只走本地环境变量 / GitHub Secrets，绝不入仓</li>
+      <li>只采公开榜单数据，不涉及任何账号登录或个人信息</li>
+      <li>不执行任何互动操作，全局限速，失败即退避</li>
+      <li>Cookie 与 API Key 只走 GitHub Secrets / 本地环境变量，绝不入仓</li>
     </ul>
     <p style="color:var(--ink3);font-size:12.5px" id="methodMeta"></p>
   </div>
@@ -336,7 +375,8 @@ async function boot(){
     const latest = await fetch("latest.json?v="+Date.now()).then(r=>r.json());
     STATE.latest = latest;
     STATE.idx = Math.max(0, STATE.dates.indexOf(latest.date));
-    STATE.trends = await fetch("data/trends.json").then(r=>r.ok?r.json():null).catch(()=>null);
+    STATE.trends = (latest && latest.status === "reference_only") ? null
+      : await fetch("data/trends.json").then(r=>r.ok?r.json():null).catch(()=>null);
     render();
   }catch(e){
     $("#board").innerHTML = '<div class="empty"><h2>还没有产出</h2><p>先跑一次 <code>python scripts/fetch_heat.py</code>，或等今天的采集任务。</p></div>';
@@ -476,11 +516,18 @@ function renderReference(d){
   const ref = d.reference||{};
   const gate = ref.gate||{};
   const srcs = ref.sources||[];
-  $("#refHint").innerHTML = srcs.map(function(x){
+  const chipOf = function(id){
+    const x = srcs.find(function(y){return y.id===id;});
+    if(!x) return '';
     return '<span class="chip '+(x.ok?"ok":"bad")+'">'+ESC(x.name)+(x.ok?(" "+x.items):" 不可用")+'</span>';
-  }).join(" ") + (gate.passed
-      ? ' <span class="chip line">资产级对照 '+gate.matched_total+' 处提及</span>'
-      : ' <span class="chip line">' + ESC(gate.note||"资产级对照样本不足") + '</span>');
+  };
+  const bothN = (d.stats && d.stats.both_boards) || 0;
+  $("#popSrc").innerHTML = chipOf("em_popularity") + chipOf("ths_hot")
+    + '<span class="chip line">双榜共振 '+bothN+' 只</span>';
+  $("#xqSrc").innerHTML = chipOf("xueqiu_hots")
+    + (gate.passed
+      ? '<span class="chip line">匹配 '+gate.matched_total+' 处资产提及</span>'
+      : '<span class="chip line">'+ESC(gate.note||"样本不足，不参与判定")+'</span>');
 
   const stocks = ref.stocks||[];
   $("#popBody").innerHTML = stocks.length ? stocks.map(function(x,i){
@@ -506,7 +553,12 @@ function renderReference(d){
   const xq = ref.xueqiu_posts||[];
   $("#xqList").innerHTML = xq.length ? xq.map(function(p,i){
     const raw = (p.text||"").replace(/\s+/g," ").trim();
-    const title = (p.title||"").trim();
+    let title = (p.title||"").trim();
+    let body0 = raw;
+    if (!title && raw) {                     // 雪球多数热帖无 title：正文前 40 字当标题
+      title = raw.slice(0,40) + (raw.length > 40 ? "…" : "");
+      body0 = raw.slice(40).trim();
+    }
     const src = p.link ? '<a class="src" href="'+ESC(p.link)+'" target="_blank" rel="noopener noreferrer">原帖 ↗</a>' : '';
     // 有标题才单列标题行（标题本身可点）；没标题就直接显示正文，避免展开后重复
     const head = title
@@ -514,7 +566,7 @@ function renderReference(d){
                 : '<span class="t">'+ESC(title)+'</span>')
       : '';
     const assets = (p.assets&&p.assets.length) ? ('<span class="tagx">'+p.assets.map(ESC).join("/")+'</span>') : '';
-    const body = raw ? '<div class="body">'+ESC(raw)+'</div>' : '';
+    const body = body0 ? '<div class="body">'+ESC(body0)+'</div>' : '';
     return '<li>'+head+assets+body+'<div class="more" style="margin-top:3px">'+src
       +(raw.length>60?'<span class="expandtip"> · 点击展开</span>':'')+'</div></li>';
   }).join("") : '<li><span class="n" style="color:var(--ink4)">无条目</span></li>';
@@ -545,7 +597,7 @@ function renderCandidates(d){
 function renderEvents(d){
   const ev = d.events_recent||[];
   if(!ev.length){
-    $("#events").innerHTML = '<div class="empty"><h2>事件库还没有记录</h2><p>门槛：热度≥80 连续 3 日 / 单日增速进历史前 5% / 新面孔 7 日内进 Top5。<br>首日不判定 newcomer（第一天全榜都是新面孔，不是事件）。</p></div>';
+    $("#events").innerHTML = '<div class="empty"><h2>事件库还没有记录</h2><p>事件库只服务社媒侧（小红书）：热度≥80 连续 3 日 / 增速进历史前 5% / 新面孔 7 日内进 Top5。<br>该车道 2026-11-27 起暂停，恢复后重新积累。</p></div>';
     return;
   }
   $("#events").innerHTML = '<table><thead><tr><th>资产</th><th class="num">峰值</th><th>起热</th><th class="num">跨度</th><th>入库原因</th></tr></thead><tbody>'
@@ -556,6 +608,37 @@ function renderEvents(d){
       + '<td style="font-size:12px;color:var(--ink2)">'+ESC((e.entry_reasons||[]).join("；"))+'</td></tr>').join("")
     + '</tbody></table>';
 }
+
+/* 个股明细折叠 */
+$("#togglePop").addEventListener("click", function(){
+  const w = $("#popWrap");
+  const hidden = w.classList.toggle("hidden");
+  this.textContent = hidden ? "展开个股明细" : "收起个股明细";
+});
+
+/* 往期抽屉（移动端也能用） */
+const HIST = $("#histPanel");
+function buildHist(){
+  const dates = STATE.dates || [];
+  if(!dates.length){ HIST.innerHTML = '<button disabled>暂无往期</button>'; return; }
+  HIST.innerHTML = dates.slice(0,40).map(function(d,i){
+    return '<button data-i="'+i+'" class="'+(i===STATE.idx?"cur":"")+'">'+d+'</button>';
+  }).join("");
+  $$("#histPanel button").forEach(function(b){
+    b.addEventListener("click", function(ev){
+      ev.stopPropagation();
+      HIST.classList.remove("on");
+      const target = parseInt(b.dataset.i,10);
+      if(!isNaN(target)) gotoDate(target - STATE.idx);
+    });
+  });
+}
+$("#histBtn").addEventListener("click", function(e){
+  e.stopPropagation();
+  const on = HIST.classList.toggle("on");
+  if(on) buildHist();
+});
+document.addEventListener("click", function(){ HIST.classList.remove("on"); });
 
 /* 历史浏览 */
 function gotoDate(dir){
