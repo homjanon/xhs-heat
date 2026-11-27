@@ -107,6 +107,34 @@ def build(cfg, adict, date=None, keep_history=True):
     }
 
 
+def record_breakouts(items, date, capacity=300):
+    """把出圈事件写进事件库（events.json 的 breakouts 数组），与小红书事件分开存。
+
+    - 当日去重：同一天同词条只保留一条
+    - 连续天数：从 douyin 历史快照里数该词出现的天数
+    """
+    store_path = os.path.join(DATA_DIR, "events.json")
+    store = read_json(store_path, default={"version": 3, "events": [], "breakouts": []}) or {}
+    brs = [b for b in (store.get("breakouts") or []) if b.get("date") != date]
+    days_map = recent(30, date)
+    for it in items:
+        word = it.get("word") or ""
+        seen = {d for d in days_map.get(word, [])}
+        brs.append({
+            "date": date, "word": word, "rank": it.get("rank"),
+            "hot_value": it.get("hot_value"), "kind": it.get("kind"),
+            "assets": it.get("assets") or [],
+            "days": len(seen) + (0 if any(x["date"] == date for x in days_map.get(word, [])) else 0) or 1,
+        })
+    brs.sort(key=lambda x: x.get("date") or "", reverse=True)
+    del brs[capacity:]
+    store["breakouts"] = brs
+    store["updated"] = date
+    store["version"] = max(int(store.get("version") or 3), 3)
+    write_json(store_path, store, indent=None)
+    return len(brs)
+
+
 def recent(days=7, date=None):
     """近 N 天出圈记录（供页面显示"连续第几天在榜"）。"""
     date = date or today_str()
