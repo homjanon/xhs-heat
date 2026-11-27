@@ -221,7 +221,9 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   .cards{grid-template-columns:1fr}
   .ref-grid{grid-template-columns:1fr}
   nav{overflow-x:auto}
-  nav .datepick{display:none}
+  /* 手机上保留「往期」入口，隐藏前后翻页（评审 P2-11） */
+  nav .datepick{display:flex}
+  nav .datepick #prev, nav .datepick #next, nav .datepick #dLabel{display:none}
   .bar,.intent{margin-left:12px;margin-right:12px}
   .row-b{padding:9px 12px 11px}
 }
