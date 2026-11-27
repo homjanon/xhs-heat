@@ -281,7 +281,9 @@ def write_outputs(payload, cfg, date, ranked):
         "caliber": payload["caliber"],
         "assets": {r["id"]: {
             "name": r["name"], "volume": r["volume"], "raw_engagement": r["raw_engagement"],
+            "breadth": r.get("breadth"), "median_engagement": r.get("median_engagement"),
             "heat": r["heat"], "rank": r["rank"], "notes": r["notes"],
+            "caliber": r.get("caliber"), "momentum_basis": r.get("momentum_basis"),
             "marketing_share": r["marketing_share"], "intent": r["intent"],
             "category": r["category"],
         } for r in ranked},
@@ -455,12 +457,13 @@ def run(args):
     history, hist_days = heat_mod.load_history(HISTORY_DAYS, exclude=date)
     ranked, caliber = heat_mod.compute_heat(rows, history, cfg, date)
     ranked = heat_mod.annotate_trends(ranked, history, adict, date)
-    surge = heat_mod.surge_list(ranked, history, cfg, int(cfg["output"]["surge_top"]))
+    surge = heat_mod.surge_list(ranked, history, cfg, date, int(cfg["output"]["surge_top"]))
     newbs = heat_mod.newcomers(ranked, history, cfg) if cfg["output"].get("newcomers") else []
     log("  资产 %d 个 · 口径 %s（历史 %d 天）" % (len(ranked), caliber["mode"], caliber["history_days"]))
     for r in ranked[:5]:
-        log("    %d. %-10s %5.1f  笔记%3d 互动%6d 营销%2.0f%%"
-            % (r["rank"], r["name"], r["heat"], r["notes"], r["raw_engagement"], r["marketing_share"] * 100))
+        log("    %d. %-10s %5.1f  作者%3d 笔记%3d 中位互动%5d 营销%2.0f%%"
+            % (r["rank"], r["name"], r["heat"], int(r["breadth"]), r["notes"],
+               int(r["median_engagement"]), r["marketing_share"] * 100))
 
     step("6/8 对照车道（雪球热帖 + 东财人气榜）")
     ref = {"ok": False, "note": "已跳过"}
