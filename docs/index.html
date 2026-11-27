@@ -143,6 +143,13 @@ h2 .n{font-size:11.5px;color:var(--ink4);font-weight:400}
 /* ---------- xueqiu posts ---------- */
 .xqlist{list-style:none;margin:0;padding:0}
 .srcline{margin:2px 0 10px;display:flex;flex-wrap:wrap;gap:5px}
+.dylist{display:flex;flex-direction:column;gap:7px}
+.dylist .it{display:flex;gap:8px;align-items:baseline;font-size:13px;color:var(--ink2);line-height:1.5}
+.dylist .rk{font-size:11px;color:#fff;background:var(--accent);border-radius:4px;
+  padding:0 5px;font-weight:600;flex:none}
+.dylist .rk.mkt{background:var(--blue)}
+.dylist .w{flex:1}
+.dylist .hv{color:var(--ink4);font-size:11.5px;white-space:nowrap}
 .xqlist li{padding:8px 0;border-top:1px solid var(--line2);cursor:pointer}
 .xqlist li:first-child{border-top:0}
 .xqlist .t{font-size:13.5px;color:var(--ink);display:block;text-decoration:none;font-weight:600;
@@ -281,6 +288,22 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <h2>概念热度 <span class="n">两榜个股的概念标签聚合，接近板块级关注度</span></h2>
   <div class="chips" id="conceptChips"></div>
 
+  <h2>ETF 资金流 <span class="n">真金白银：成交额与量比</span></h2>
+  <div class="srcline" id="etfSrc"></div>
+  <table class="pop" id="etfTable">
+    <thead><tr>
+      <th style="width:30px">#</th><th>ETF（对应资产）</th>
+      <th style="width:58px" class="num">涨幅</th>
+      <th style="width:70px" class="num">成交额</th>
+      <th style="width:52px" class="num">量比</th>
+    </tr></thead>
+    <tbody id="etfBody"></tbody>
+  </table>
+
+  <h2>抖音出圈 <span class="n">全网级信号，单独成层，不进热度加权</span></h2>
+  <div class="srcline" id="dySrc"></div>
+  <div class="dylist" id="dyList"></div>
+
   <h2>散户人气榜 <span class="n">东财 × 同花顺，双列名次交叉验证</span>
     <button class="toggle" id="togglePop">展开个股</button></h2>
   <div class="srcline" id="popSrc"></div>
@@ -336,8 +359,13 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
     <p>停采期间页面照常出——这是架构层面就设计好的降级路径，不是事故。恢复后按「每周 2 次 × 6 个核心词」先验证一周。</p>
     <p style="color:var(--ink3);font-size:12.5px">原热度的算法（保留，恢复后启用）：<code>Heat = 100 × (0.45·V + 0.35·E + 0.20·M)</code>，V 讨论量 / E 互动量 / M 3 日动量；历史满 30 天后用 90 日滚动分位归一，之前走冷启动截面归一。</p>
 
-    <h3>抖音出圈层 · 计划中</h3>
-    <p>抖音热榜是完全公开、无需登录的接口（实测 50 条/次）。它不该进热度加权——99% 的日子资产不在榜上，值是 0 或 1，与连续热度混合会制造巨大跳变。正确用法是「事件」：<code>资产在抖音热榜第 7 位（热值 935 万）</code>，这是唯一有绝对量纲的跨人群信号。</p>
+    <h3>ETF 资金流</h3>
+    <p>把「概念热度」落到真金白银上：取词典里 17 只能映射到资产的 ETF，用腾讯行情批量拿<strong>成交额</strong>，再与自身近 5 日均值比得<strong>量比</strong>。成交额是存量，量比才是变化——后者需要每天累积快照，满 3 天后才有值。</p>
+    <p style="color:var(--ink3);font-size:12.5px">为什么不用东财 push2：那套行情接口是 IP 级限流（portfolio 项目实测 6 天 502），腾讯 qt.gtimg.cn 是不同的风控面，一次请求覆盖全部自选。</p>
+
+    <h3>抖音出圈层</h3>
+    <p>完全公开、无需登录的接口（实测 50 条/次）。它<strong>不进热度加权</strong>——99% 的日子资产不在榜上，值是 0 或 1，与连续热度混合会制造巨大跳变。正确用法是「事件」：<code>#7 国常会：加力发挥国家队稳市作用 · 933 万</code>。</p>
+    <p>红色徽章 = 命中资产；蓝色徽章 = 只命中财经信号词（市场级，不指向具体资产）。这是唯一有绝对量纲的跨人群信号，也零账号风险。</p>
 
     <h3>数据来源与口径</h3>
     <ul>
@@ -345,6 +373,8 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
       <li>同花顺热榜：第二源，100 只，自带热度值、涨跌幅、概念标签</li>
       <li>雪球热帖：资产级提及，单次约 10 条——样本薄，只作旁证；匹配 &lt;6 处或单资产 &lt;2 次时不判定</li>
       <li>雪球 screener（follow7d/tweet）实测返回空列表且触发 IP 封禁，已放弃</li>
+      <li>抖音热榜：iesdouyin 公开接口，50 条/次，只做出圈事件</li>
+      <li>ETF 资金流：腾讯行情 qt.gtimg.cn，17 只映射到资产的 ETF</li>
     </ul>
 
     <h3>合规</h3>
@@ -535,6 +565,39 @@ function renderReference(d){
     + (gate.passed
       ? '<span class="chip line">匹配 '+gate.matched_total+' 处资产提及</span>'
       : '<span class="chip line">'+ESC(gate.note||"样本不足，不参与判定")+'</span>');
+
+  /* ETF 资金流 */
+  const etf = ref.etf||{};
+  $("#etfSrc").innerHTML =
+      '<span class="chip '+(etf.ok?"ok":"bad")+'">'+(etf.ok?("合计 "+(etf.total_yi||0)+" 亿"):"不可用")+'</span>'
+    + (etf.count? '<span class="chip line">'+etf.count+' 只</span>' : '')
+    + (etf.note? '<span class="chip line">'+ESC(etf.note)+'</span>' : '');
+  const erows = etf.rows||[];
+  $("#etfBody").innerHTML = erows.length ? erows.map(function(x,i){
+    const cls = (x.pct||0) >= 0 ? "up-pct" : "down-pct";
+    const ratio = (x.vol_ratio==null) ? "—" : (x.vol_ratio.toFixed(1)+"×");
+    const ratioCls = (x.vol_ratio!=null && x.vol_ratio>=1.5) ? "up-pct" : "";
+    return '<tr>'
+      + '<td class="rk0">'+(i+1)+'</td>'
+      + '<td><span class="nm">'+ESC(x.name)+'</span><span class="cd">'+ESC(x.asset||"")+'</span></td>'
+      + '<td class="num '+cls+'">'+((x.pct>0?"+":"")+(x.pct||0).toFixed(2))+'%</td>'
+      + '<td class="num">'+(x.amount_yi||0).toFixed(0)+' 亿</td>'
+      + '<td class="num '+ratioCls+'">'+ratio+'</td>'
+      + '</tr>';
+  }).join("") : '<tr><td colspan="5" style="color:var(--ink4)">本期无数据</td></tr>';
+
+  /* 抖音出圈 */
+  const dy = ref.douyin||{};
+  $("#dySrc").innerHTML =
+      '<span class="chip '+(dy.ok?"ok":"bad")+'">'+(dy.ok?("在榜 "+((dy.items||[]).length)+" 条 / 全榜 "+(dy.total_board||0)):"不可用")+'</span>'
+    + (dy.note? '<span class="chip line">'+ESC(dy.note)+'</span>' : '');
+  const ditems = dy.items||[];
+  $("#dyList").innerHTML = ditems.length ? ditems.map(function(x){
+    const assets = (x.assets&&x.assets.length) ? '<span class="tagx">'+x.assets.map(ESC).join("/")+'</span>' : '';
+    return '<div class="it"><span class="rk '+(x.kind==="market"?"mkt":"")+'">#'+x.rank+'</span>'
+      + '<span class="w">'+ESC(x.word)+assets+'</span>'
+      + '<span class="hv">'+Math.round((x.hot_value||0)/10000)+' 万</span></div>';
+  }).join("") : '<div class="hint">今日热榜无财经/资产条目（稀疏信号，属正常）</div>';
 
   const stocks = ref.stocks||[];
   $("#popBody").innerHTML = stocks.length ? stocks.map(function(x,i){
