@@ -172,6 +172,15 @@ def fetch_ths_hot(cfg, limit=100):
     return {"ok": True, "items": items, "note": ""}
 
 
+def _market_prefix(code):
+    """6/9 开头 = 沪市；4/8 开头 = 北交所；其余 = 深市。"""
+    if code.startswith(("6", "9")):
+        return "sh"
+    if code.startswith(("4", "8")):
+        return "bj"
+    return "sz"
+
+
 def merge_popularity(em_items, ths_items, limit=30):
     """合并两榜：代码对齐，双榜共振单独标记。"""
     em = {}
@@ -184,7 +193,7 @@ def merge_popularity(em_items, ths_items, limit=30):
 
     codes = set(em) | set(ths)
     need_names = [c for c in codes if not (ths.get(c) or {}).get("name")]
-    names = _quote_names([("sh" if c.startswith(("6", "9")) else "sz") + c for c in need_names]) if need_names else {}
+    names = _quote_names([_market_prefix(c) + c for c in need_names]) if need_names else {}
 
     rows = []
     for c in codes:
@@ -198,7 +207,7 @@ def merge_popularity(em_items, ths_items, limit=30):
         best = min(ranks)
         rows.append({
             "code": c,
-            "name": (t.get("name") or names.get(("sh" if c.startswith(("6", "9")) else "sz") + c) or ""),
+            "name": (t.get("name") or names.get(_market_prefix(c) + c) or ""),
             "em_rank": em_rank,
             "ths_rank": ths_rank,
             "best_rank": best,
@@ -308,6 +317,7 @@ def build(cfg, dict_obj):
         "em_popularity": pop["items"],
         "stocks": stocks,
         "concepts": concepts,
+        "ths_hot": (ths.get("items") or [])[:20],
         "both_count": sum(1 for s in all_stocks if s["both"]),
         "diverge_count": sum(1 for s in all_stocks if s["diverge"]),
         "total_stocks": len(all_stocks),
