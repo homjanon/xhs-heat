@@ -52,7 +52,8 @@ Heat = 100 × (0.45·广度 + 0.35·深度 + 0.20·动量)
 
 ## 四、每天怎么跑
 
-定时由 Cloudflare Worker `qdii-dispatch` 的 **16:10** 槽位触发（接入方法见下），自动走「只跑参考车道」模式。
+**已定时**：Cloudflare Worker `qdii-dispatch` 的 **16:10** 槽位（含周末）触发 `publish.yml`，
+自动走「只跑参考车道」模式（`mode=reference-only, collect=skip`）。
 
 手动触发：
 
@@ -69,35 +70,11 @@ python scripts/test_metrics.py                  # 度量回归（11 项）
 python scripts/probe_sources.py                 # 数据源健康探测
 ```
 
-## 五、定时触发接入（你来操作，一次性）
+## 五、定时触发（已接入）
 
-> ⚠️ 先决条件：fine-grained PAT 的 **Repository access 勾上 `homjanon/xhs-heat`**，
-> 否则 dispatch 返回 **404**（不是 403），看起来像"仓库名写错"。
-
-**1 · worker.js 加槽位**（16:10，错开 douban 16:00）：
-
-```js
-"16:10": [
-    // 资产热度雷达：资金侧 + 出圈层，每天含周末；只跑参考车道，不碰小红书（已放弃）
-    { repo: "homjanon/xhs-heat", workflow: "publish.yml",
-      inputs: { mode: "reference-only", collect: "skip" } },
-],
-```
-
-**2 · 部署**（必须清代理变量，挂 7890 时 api.cloudflare.com 反而失败）：
-
-```bash
-cd qdii-nav-tracker/cloudflare-dispatch
-unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
-node <wrangler.js路径> deploy
-```
-
-**3 · 验证**：
-
-```bash
-curl "https://qdii-dispatch.homjanon.workers.dev/trigger?repo=xhs-heat&key=<DISPATCH_KEY>"   # 期望 204
-gh run list --repo homjanon/xhs-heat --limit 1
-```
+- Worker：`qdii-dispatch`，槽位 **16:10**（错开 douban 16:00 / xiaoxu 16:20 / cmb 16:30）
+- 触发参数：`{ mode: "reference-only", collect: "skip" }`
+- 手动补跑：`curl "https://qdii-dispatch.homjanon.workers.dev/trigger?repo=xhs-heat&key=<DISPATCH_KEY>"` 期望 204
 
 ## 六、存储与清理
 
@@ -150,8 +127,9 @@ docs/               看板与产物（Pages 根目录）
 - 全局限速、失败退避、461/403 立即停手
 - Cookie 与 API Key 只走 GitHub Secrets / 本地环境变量，绝不入仓
 
-## 十、实施记录
+## 十、实施记录（摘要）
 
-- 2026-11-26：v3 设计落地（词典/处理链/看板/workflows），A2 实验证明云端可采小红书
-- 2026-11-27：小红书账号收到违规预警 → **永久放弃社媒侧**；接入东财/同花顺/ETF/抖音四条车道；度量层 v3 重写；站点改名「资产热度雷达」
-- 评审来源：外部代码评审（词池轮换 vs 动量、压缩序列、V/E 共线等），逐条核实后采纳，其中"雪球 screener 可用"实测不成立已否决
+- 2026-11-26：立项，v3 设计落地；A2 实验证明云端可采小红书
+- 2026-11-27：小红书账号收到违规预警 → 永久放弃社媒侧；接入东财/同花顺/ETF/抖音四条车道；
+  度量层 v3 重写（日历对齐 / 广度深度正交 / 30 天 rebased / cap 迭代）；站点改名「资产热度雷达」；Worker 16:10 接入
+- 外部评审逐条核实后采纳；其中「雪球 screener 可用」实测不成立，已否决
