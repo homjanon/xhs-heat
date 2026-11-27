@@ -1,48 +1,89 @@
 # -*- coding: utf-8 -*-
 """
 xhs-heat · heat.py
-聚合 + 热度分 + 事件库（v2 第 05/07 节，ai-radar 双留存同构）
+聚合 + 热度分 + 事件库
 
-热度公式：
-  Heat = 100 × (0.45·V + 0.35·E + 0.20·M)
-  V = 讨论量（自然笔记数，多资产按 1/n 分摊）
-  E = 互动量（赞×1 + 藏×3 + 评×2 的对数和，单条贡献上限 10%）
-  M = 3 日动量（截断 [-2, +3]）
+v3 修订（2026-11-27，按代码评审核查后重写）：
+  1. 所有时序计算一律「日历对齐」：缺数据就是缺，不再把压缩序列当成连续日
+  2. V/E 正交化：广度 = 去重作者数，深度 = 单篇互动中位数（原来 V=笔记数、E=互动总和，两者共线）
+  3. bootstrap 天数 8 → 30，切换日标 trend="rebased"、不算 delta_heat
+  4. 单条 cap 改为迭代收敛，注释写 10% 就真是 10%
 
-两种口径：
-  rolling   —— 历史 ≥ bootstrap_min_days(8) 天，用 90 日滚动分位数归一
-  bootstrap —— 历史不足，用当日截面 log 归一 + 动量中性 0.5，产物标 caliber=bootstrap
-               （绝不用「第 1 天就满分 100」这种假精度糊过去）
+Heat = 100 × (w_b·广度 + w_d·深度 + w_m·动量)
 """
 
 import math
 import os
+from datetime import date as _date
+from datetime import timedelta
 
 from common import DATA_DIR, clamp, log, read_json, today_str, write_json
-from hard_rules import INTENTS, intent_distribution
+from hard_rules import INTENTS
 
 AGG_DIR = os.path.join(DATA_DIR, "agg")
+EVENTS_PATH = os.path.join(DATA_DIR, "events.json")
+
+
+# ---------------------------------------------------------------------------
+# 日历工具
+# ---------------------------------------------------------------------------
+def date_minus(date, n):
+    return (_date.fromisoformat(date) - timedelta(days=int(n))).isoformat()
+
+
+def at(history, asset_id, date):
+    """取某资产在某一天的行；没有就是 None（不做任何"就近替代"）。"""
+    return (history.get(date) or {}).get(asset_id)
+
+
+def _pick(row, *keys, default=0.0):
+    for k in keys:
+        if row and row.get(k) is not None:
+            return float(row[k])
+    return default
 
 
 # ---------------------------------------------------------------------------
 # 聚合
 # ---------------------------------------------------------------------------
+def _cap_iterative(contrib, cap, iterations=2):
+    """把最大单条压到占总量 ≤cap 后重新归一，迭代收敛。
+
+    原来的一步公式 `raw - top + raw*cap` 分母同时变小，实际占比 >cap，
+    注释写 10% 却不是 10%。这里迭代到收敛。
+    """
+    total = sum(c for _n, c in contrib)
+    if total <= 0 or cap <= 0 or not contrib:
+        return total, 0.0
+    if len(contrib) < 2:            # 只有一条时比例必然是 100%，无可压缩
+        return total, 1.0
+    for _ in range(max(1, iterations)):
+        if total <= 0:
+            break
+        top = max(contrib, key=lambda x: x[1])[1]
+        if top / total <= cap:
+            break
+        others = total - top
+        if others <= 0:
+            break
+        total = others / (1.0 - cap)
+        contrib = [(n, min(c, total * cap)) for n, c in contrib]
+    return total, (max(c for _n, c in contrib) / total if total > 0 else 0.0)
+
+
 def aggregate(notes, adict, cfg):
-    """notes 需已带 _assets={asset_id: weight}、intent、marketing 字段。"""
+    """notes 需已带 _assets={asset_id: weight}、intent、marketing、author_hash。"""
     buckets = {}
     for n in notes:
         for aid, weight in (n.get("_assets") or {}).items():
             if not adict.is_investable(aid):
                 continue
             b = buckets.setdefault(aid, {"natural": [], "marketing": [], "weights": {}})
-            key = id(n)
-            b["weights"][key] = weight
-            if n.get("marketing"):
-                b["marketing"].append(n)
-            else:
-                b["natural"].append(n)
+            b["weights"][id(n)] = weight
+            (b["marketing"] if n.get("marketing") else b["natural"]).append(n)
 
     cap = float(cfg["hard_rules"].get("single_note_heat_cap", 0.1))
+    cap_iter = int(cfg["heat"].get("cap_iterations", 2))
     ew = cfg["heat"]["engagement_weights"]
     log_base = float(cfg["heat"].get("engagement_log_base", 10))
 
@@ -56,22 +97,27 @@ def aggregate(notes, adict, cfg):
 
         volume = sum(weights.get(id(n), 1.0) for n in natural)
 
-        # 单条贡献上限：先算原始互动，再把超过 cap 的巨头压回 cap 后重算
-        contrib = []
+        # 广度：去重作者数（没有 author_hash 时退回笔记数）
+        authors = {n.get("author_hash") for n in natural if n.get("author_hash")}
+        breadth = float(len(authors)) if authors else float(len(natural))
+
+        # 深度：单篇互动中位数（原始值），衡量"每条内容有多重"
+        per_note, contrib = [], []
         for n in natural:
             w = weights.get(id(n), 1.0)
             e = (int(n.get("liked") or 0) * ew.get("like", 1)
                  + int(n.get("collected") or 0) * ew.get("collect", 3)
                  + int(n.get("comment") or 0) * ew.get("comment", 2))
+            per_note.append(e)
             contrib.append((n, e * w))
+        per_note.sort()
+        mid = len(per_note) // 2
+        median_eng = float(per_note[mid]) if per_note else 0.0
+        if len(per_note) % 2 == 0 and per_note:
+            median_eng = (per_note[mid - 1] + per_note[mid]) / 2.0
+
         raw_total = sum(c for _n, c in contrib)
-        capped_total = raw_total
-        single_share = 0.0
-        if raw_total > 0 and cap > 0:
-            top = max(contrib, key=lambda x: x[1])
-            single_share = top[1] / raw_total
-            if single_share > cap:
-                capped_total = raw_total - top[1] + raw_total * cap
+        capped_total, single_share = _cap_iterative(contrib, cap, cap_iter)
         engagement = math.log(1.0 + capped_total, log_base) if capped_total > 0 else 0.0
 
         intent = {k: 0.0 for k in INTENTS}
@@ -88,9 +134,11 @@ def aggregate(notes, adict, cfg):
             "id": aid,
             "name": adict.name_of(aid),
             "category": asset.get("category", ""),
-            "volume": round(volume, 2),
+            "volume": round(volume, 2),           # 加权讨论量（多资产按 1/n 分摊）
             "notes": len(natural),
-            "engagement": round(engagement, 3),
+            "breadth": breadth,                    # 去重作者数 → 热度里的"广度"
+            "median_engagement": median_eng,       # 单篇互动中位数 → 热度里的"深度"
+            "engagement": round(engagement, 3),    # 对数互动（展示用，不进热度）
             "raw_engagement": int(raw_total),
             "marketing_notes": len(b["marketing"]),
             "marketing_share": round(len(b["marketing"]) / float(total_notes), 3) if total_notes else 0.0,
@@ -112,7 +160,6 @@ def aggregate(notes, adict, cfg):
 # 历史
 # ---------------------------------------------------------------------------
 def load_history(days=90, exclude=None):
-    """读 docs/data/agg/*.json，返回 {date: {asset_id: row}} 与日期列表。"""
     out = {}
     if not os.path.isdir(AGG_DIR):
         return out, []
@@ -133,53 +180,59 @@ def load_history(days=90, exclude=None):
 def _percentile_rank(value, series):
     if not series:
         return 0.5
-    below = sum(1 for x in series if x <= value)
-    return below / float(len(series))
+    return sum(1 for x in series if x <= value) / float(len(series))
 
 
 def compute_heat(rows, history, cfg, date=None):
-    """返回 (带 heat/rank 的行列表, 口径信息)"""
     date = date or today_str()
-    min_days = int(cfg["heat"].get("bootstrap_min_days", 8))
+    min_days = int(cfg["heat"].get("bootstrap_min_days", 30))
+    w = cfg["heat"]["weights"]
+    lo, hi = cfg["hard_rules"].get("momentum_clip", [-2, 3])
     hist_days = sorted(history.keys())
     rolling = len(hist_days) >= min_days
 
-    max_v = max([r["volume"] for r in rows.values()] or [1.0]) or 1.0
-    max_e = max([r["raw_engagement"] for r in rows.values()] or [1]) or 1
+    max_b = max([r["breadth"] for r in rows.values()] or [1.0]) or 1.0
+    max_d = max([r["median_engagement"] for r in rows.values()] or [1.0]) or 1.0
 
     for aid, r in rows.items():
-        series_v, series_e = [], []
+        series_b, series_d = [], []
         for d in hist_days[-90:]:
             h = history[d].get(aid)
             if h:
-                series_v.append(float(h.get("volume") or 0))
-                series_e.append(float(h.get("raw_engagement") or 0))
+                series_b.append(_pick(h, "breadth", "volume"))
+                series_d.append(_pick(h, "median_engagement", "raw_engagement"))
 
-        use_rolling = rolling and len(series_v) >= min_days
+        use_rolling = rolling and len(series_b) >= min_days
         if use_rolling:
-            v_norm = _percentile_rank(r["volume"], series_v)
-            e_norm = _percentile_rank(r["raw_engagement"], series_e)
-            v3 = series_v[-3] if len(series_v) >= 3 else 0.0
-            momentum = (r["volume"] + 1.0) / (v3 + 1.0) - 1.0
-            lo, hi = cfg["hard_rules"].get("momentum_clip", [-2, 3])
-            momentum = clamp(momentum, float(lo), float(hi))
-            m_norm = (momentum + 2.0) / 5.0
-            r["momentum"] = round(momentum, 3)
+            b_norm = _percentile_rank(r["breadth"], series_b)
+            d_norm = _percentile_rank(r["median_engagement"], series_d)
+            # 动量：严格取「日历 3 天前」，没有就是没有，不做就近替代
+            prev = at(history, aid, date_minus(date, 3))
+            if prev is None:
+                momentum, basis, m_norm = None, "missing_3d", 0.5
+            else:
+                momentum = (r["breadth"] + 1.0) / (_pick(prev, "breadth", "volume") + 1.0) - 1.0
+                momentum = clamp(momentum, float(lo), float(hi))
+                basis = "calendar_3d"
+                m_norm = (momentum + 2.0) / 5.0
+            r["momentum"] = None if momentum is None else round(momentum, 3)
         else:
-            v_norm = math.log1p(r["volume"]) / math.log1p(max_v) if max_v > 0 else 0.0
-            e_norm = math.log1p(r["raw_engagement"]) / math.log1p(max_e) if max_e > 0 else 0.0
+            b_norm = math.log1p(r["breadth"]) / math.log1p(max_b) if max_b > 0 else 0.0
+            d_norm = math.log1p(r["median_engagement"]) / math.log1p(max_d) if max_d > 0 else 0.0
             r["momentum"] = None
-            m_norm = 0.5
+            basis, m_norm = "bootstrap", 0.5
 
-        w = cfg["heat"]["weights"]
-        heat = 100.0 * (w["volume"] * v_norm + w["engagement"] * e_norm + w["momentum"] * m_norm)
-        r["v_norm"] = round(v_norm, 3)
-        r["e_norm"] = round(e_norm, 3)
+        heat = 100.0 * (w.get("breadth", 0.45) * b_norm
+                        + w.get("depth", 0.35) * d_norm
+                        + w.get("momentum", 0.20) * m_norm)
+        r["b_norm"] = round(b_norm, 3)
+        r["d_norm"] = round(d_norm, 3)
         r["m_norm"] = round(m_norm, 3)
+        r["momentum_basis"] = basis
         r["heat"] = round(clamp(heat, 0, 100), 1)
         r["caliber"] = "rolling" if use_rolling else "bootstrap"
 
-    ranked = sorted(rows.values(), key=lambda r: (-r["heat"], -r["volume"]))
+    ranked = sorted(rows.values(), key=lambda r: (-r["heat"], -r["breadth"]))
     for i, r in enumerate(ranked, 1):
         r["rank"] = i
 
@@ -187,7 +240,9 @@ def compute_heat(rows, history, cfg, date=None):
         "mode": "rolling" if rolling else "bootstrap",
         "history_days": len(hist_days),
         "min_days_required": min_days,
-        "note": ("历史 %d 天 ≥ %d，用 90 日滚动分位数归一" % (len(hist_days), min_days)) if rolling
+        "weights": {"breadth": w.get("breadth"), "depth": w.get("depth"), "momentum": w.get("momentum")},
+        "note": ("历史 %d 天 ≥ %d，用 90 日滚动分位数归一（广度=去重作者数，深度=单篇互动中位数）"
+                 % (len(hist_days), min_days)) if rolling
                 else ("历史仅 %d 天（< %d），走冷启动截面归一；动量按中性 0.5 处理，"
                       "热分数值不可与日后 rolling 口径直接比较" % (len(hist_days), min_days)),
     }
@@ -198,10 +253,9 @@ def compute_heat(rows, history, cfg, date=None):
 # 趋势 / 连续上榜
 # ---------------------------------------------------------------------------
 def annotate_trends(ranked, history, adict, date=None):
-    """▲▼─ / 连续上榜天数 / 首次出现日期。
+    """▲▼─ + 连续在榜天数 + 首次出现日期。
 
-    没有历史（首日）时不做趋势判断：全部 flat、delta=None，
-    因为「昨天没有可比数据」和「昨天没上榜」是两件不同的事。
+    口径切换日（bootstrap → rolling）不算 delta，标 rebased —— 否则全榜跳变会被误读成行情。
     """
     date = date or today_str()
     hist_days = sorted(history.keys())
@@ -209,27 +263,30 @@ def annotate_trends(ranked, history, adict, date=None):
 
     for r in ranked:
         aid = r["id"]
-        prev_heat = None
+        prev_row = None
         for d in reversed(hist_days):
             h = history[d].get(aid)
-            if h and h.get("heat") is not None:
-                prev_heat = float(h["heat"])
+            if h:
+                prev_row = h
                 break
 
-        if prev_heat is None:
+        if prev_row is None:
             r["trend"] = "new" if has_history else "flat"
             r["delta_heat"] = None
+        elif prev_row.get("caliber") and prev_row.get("caliber") != r.get("caliber"):
+            r["trend"] = "rebased"
+            r["delta_heat"] = None
         else:
-            delta = r["heat"] - prev_heat
+            delta = r["heat"] - float(prev_row.get("heat") or 0)
             r["delta_heat"] = round(delta, 1)
             r["trend"] = "up" if delta >= 3 else ("down" if delta <= -3 else "flat")
 
-        streak = 1
-        for d in reversed(hist_days):
-            if history[d].get(aid):
-                streak += 1
-            else:
+        streak, i = 1, 1
+        while i <= 400:
+            if not at(history, aid, date_minus(date, i)):
                 break
+            streak += 1
+            i += 1
         r["streak_days"] = streak
 
         first_seen = None
@@ -242,29 +299,30 @@ def annotate_trends(ranked, history, adict, date=None):
 
 
 # ---------------------------------------------------------------------------
-# 动量榜（蹿升）
+# 动量榜（蹿升）：日历基线
 # ---------------------------------------------------------------------------
-def surge_list(ranked, history, cfg, top=3):
-    """按 3 日动量排序；冷启动时按「相对昨日增量」兜底。"""
-    hist_days = sorted(history.keys())
+def surge_list(ranked, history, cfg, date=None, top=3):
+    date = date or today_str()
     out = []
-    if hist_days:
-        for r in ranked:
-            series = [float(history[d][r["id"]]["volume"]) for d in hist_days[-3:]
-                      if history[d].get(r["id"])]
-            if not series:
-                continue
-            base = sum(series) / len(series)
-            if base < 1:
-                continue
-            growth = (r["volume"] - base) / base
-            if growth <= 0.05 or r["volume"] < 3:
-                continue
-            out.append({
-                "id": r["id"], "name": r["name"], "growth": round(growth, 2),
-                "volume": r["volume"], "heat": r["heat"], "intent": r["intent"],
-                "caliber": "3日基线" if len(series) >= 3 else "%d日基线" % len(series),
-            })
+    for r in ranked:
+        vals = []
+        for i in (1, 2, 3):
+            h = at(history, r["id"], date_minus(date, i))
+            if h:
+                vals.append(_pick(h, "breadth", "volume"))
+        if len(vals) < 2:          # 至少两个日历日才谈得上"增速"
+            continue
+        base = sum(vals) / len(vals)
+        if base < 1:
+            continue
+        growth = (r["breadth"] - base) / base
+        if growth <= 0.05 or r["breadth"] < 3:
+            continue
+        out.append({
+            "id": r["id"], "name": r["name"], "growth": round(growth, 2),
+            "breadth": r["breadth"], "heat": r["heat"], "intent": r["intent"],
+            "caliber": "%d日基线" % len(vals),
+        })
     out.sort(key=lambda x: -x["growth"])
     return out[:top]
 
@@ -273,18 +331,17 @@ def surge_list(ranked, history, cfg, top=3):
 # 新面孔
 # ---------------------------------------------------------------------------
 def newcomers(ranked, history, cfg, top=5):
-    """首日不列新面孔：没有历史就没有「新」的概念，全是新的等于全不是新的。"""
     out = []
     hist_days = sorted(history.keys())
     if not hist_days:
         return out
     for r in ranked[:30]:
-        if history and any(history[d].get(r["id"]) for d in hist_days):
+        if any(history[d].get(r["id"]) for d in hist_days):
             continue
-        if r["volume"] < 2:
+        if r["breadth"] < 2:
             continue
         out.append({"id": r["id"], "name": r["name"], "heat": r["heat"],
-                    "volume": r["volume"], "rank": r["rank"]})
+                    "breadth": r["breadth"], "rank": r["rank"]})
         if len(out) >= top:
             break
     return out
@@ -293,9 +350,6 @@ def newcomers(ranked, history, cfg, top=5):
 # ---------------------------------------------------------------------------
 # 事件库（严口径）
 # ---------------------------------------------------------------------------
-EVENTS_PATH = os.path.join(DATA_DIR, "events.json")
-
-
 def load_events():
     obj = read_json(EVENTS_PATH, default={"version": 1, "events": []})
     if not isinstance(obj, dict):
@@ -305,14 +359,7 @@ def load_events():
 
 
 def update_events(ranked, history, cfg, date=None):
-    """按 v3 第 07 节三条门槛入库；容量淘汰；返回 (events_obj, 本次变动)
-
-    纪律：
-      - 首日（无历史）不判 newcomer 规则 —— 「第一天全榜都是新面孔」是数据事实，不是事件
-      - 动量分位需 ≥20 日样本，判不了就如实跳过，不硬判
-    """
-    from datetime import date as _date
-
+    """三条门槛入库；连续判定按日历，缺一天就算断。"""
     date = date or today_str()
     store = load_events()
     events = store["events"]
@@ -320,29 +367,37 @@ def update_events(ranked, history, cfg, date=None):
     changes = {"created": [], "updated": [], "evicted": 0, "closed": 0, "skipped_rules": []}
     hist_days = sorted(history.keys())
 
-    heat_series, vol_series = {}, {}
-    for d in hist_days:
-        for aid, h in history[d].items():
-            heat_series.setdefault(aid, []).append(float(h.get("heat") or 0))
-            vol_series.setdefault(aid, []).append(float(h.get("volume") or 0))
-    for r in ranked:
-        heat_series.setdefault(r["id"], []).append(float(r["heat"]))
-        vol_series.setdefault(r["id"], []).append(float(r["volume"]))
+    today_heat = {r["id"]: float(r["heat"]) for r in ranked}
+    today_breadth = {r["id"]: float(r["breadth"]) for r in ranked}
+
+    def _heat_on(aid, d):
+        if d == date:
+            return today_heat.get(aid)
+        h = at(history, aid, d)
+        return None if h is None else float(h.get("heat") or 0)
 
     def _consecutive(aid, days, threshold):
-        s = heat_series.get(aid) or []
-        return len(s) >= days and all(v >= threshold for v in s[-days:])
+        for i in range(days):
+            v = _heat_on(aid, date_minus(date, i))
+            if v is None or v < threshold:
+                return False
+        return True
 
     def _momentum_pct(aid, percentile):
-        s = vol_series.get(aid) or []
-        if len(s) < 20:
+        """当日广度增速在自身历史增速分布中的分位；样本 <20 判不了。"""
+        vals = []
+        for i in range(1, 91):
+            h = at(history, aid, date_minus(date, i))
+            if h:
+                vals.append(_pick(h, "breadth", "volume"))   # 时间倒序
+        if len(vals) < 20:
             return None
+        base = vals[2]                      # 3 天前
+        today_m = (today_breadth.get(aid, 0) + 1.0) / (base + 1.0) - 1.0
         moms = []
-        for i in range(3, len(s)):
-            moms.append((s[i] + 1.0) / (s[i - 3] + 1.0) - 1.0)
-        today_m = moms[-1]
-        rank = sum(1 for m in moms if m <= today_m) / float(len(moms))
-        return rank >= percentile
+        for i in range(3, len(vals)):
+            moms.append((vals[i - 3] + 1.0) / (vals[i] + 1.0) - 1.0)
+        return sum(1 for m in moms if m <= today_m) / float(len(moms)) >= percentile
 
     open_by_asset = {e["asset_id"]: e for e in events if e.get("status") != "closed"}
 
@@ -386,19 +441,10 @@ def update_events(ranked, history, cfg, date=None):
                     e.setdefault("entry_reasons", []).append(reason)
             changes["updated"].append(aid)
         else:
-            ev = {
-                "asset_id": aid,
-                "name": r["name"],
-                "category": r["category"],
-                "start_date": date,
-                "last_date": date,
-                "span_days": 1,
-                "peak_heat": r["heat"],
-                "peak_date": date,
-                "entry_reasons": reasons,
-                "intent_peak": r["intent"],
-                "status": "open",
-            }
+            ev = {"asset_id": aid, "name": r["name"], "category": r["category"],
+                  "start_date": date, "last_date": date, "span_days": 1,
+                  "peak_heat": r["heat"], "peak_date": date,
+                  "entry_reasons": reasons, "intent_peak": r["intent"], "status": "open"}
             events.append(ev)
             open_by_asset[aid] = ev
             changes["created"].append(aid)
@@ -424,6 +470,6 @@ def update_events(ranked, history, cfg, date=None):
 
     store["events"] = sorted(events, key=lambda x: (-float(x.get("peak_heat") or 0)))
     store["updated"] = date
-    store["version"] = 2
+    store["version"] = 3
     write_json(EVENTS_PATH, store, indent=None)
     return store, changes
