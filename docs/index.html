@@ -125,6 +125,10 @@ h2 .n{font-size:11.5px;color:var(--ink4);font-weight:400}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chips .c{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:4px 11px;font-size:13px}
 .chips .c i{font-style:normal;color:var(--ink4);font-size:11px;margin-left:5px}
+.chips .c .chg{color:var(--up);font-size:11px;margin-left:5px}
+.chips .c .chg.down{color:var(--down)}
+.chips .c .tagx{margin-left:5px}
+.rk0 .badge,.nm .badge{margin-left:5px}
 
 /* ---------- reference ---------- */
 .ref-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -250,7 +254,7 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <div class="duo">
     <span><b>资金侧</b> 东财 / 同花顺人气 · 抖音出圈</span>
     <span class="sep">|</span>
-    <span class="muted"><b>社媒侧</b> 小红书（暂停采集中）</span>
+    <span class="muted"><b>社媒侧</b> 小红书（已放弃）</span>
   </div>
   <div class="meta" id="hMeta"></div>
   <div id="banner"></div>
@@ -307,12 +311,13 @@ footer{margin-top:44px;padding-top:16px;border-top:1px solid var(--line);font-si
   <h2>散户人气榜 <span class="n">东财 × 同花顺，双列名次交叉验证</span>
     <button class="toggle" id="togglePop">展开个股</button></h2>
   <div class="srcline" id="popSrc"></div>
+  <div class="hint" id="trendLine"></div>
   <div id="popWrap" class="hidden">
     <table class="pop">
       <thead><tr>
         <th style="width:30px">#</th><th>名称</th>
         <th style="width:48px" class="num">东财</th><th style="width:56px" class="num">同花顺</th>
-        <th style="width:60px" class="num">涨幅</th><th>概念</th>
+        <th style="width:60px" class="num">涨幅</th><th style="width:52px" class="num">变化</th><th>概念</th>
       </tr></thead>
       <tbody id="popBody"></tbody>
     </table>
@@ -605,20 +610,34 @@ function renderReference(d){
     const cls = (x.chg_pct||0) >= 0 ? "up-pct" : "down-pct";
     const strong = (x.em_rank && x.ths_rank && x.em_rank <= 10 && x.ths_rank <= 10);
     const mark = strong ? '<span class="badge">双榜</span>' : (x.diverge ? '<span class="badge gray">分歧</span>' : '');
+    const rd = x.is_new ? '<span class="badge">新</span>'
+      : (x.rank_delta!=null && x.rank_delta!==0)
+        ? '<span class="'+(x.rank_delta>0?"up-pct":"down-pct")+'">'+(x.rank_delta>0?"↑":"↓")+Math.abs(x.rank_delta)+'</span>'
+        : "—";
     return '<tr>'
       + '<td class="rk0">'+(i+1)+'</td>'
       + '<td><span class="nm">'+ESC(x.name||x.code)+'</span><span class="cd">'+ESC(x.code)+'</span>'+mark+'</td>'
       + '<td class="num">'+(x.em_rank||"—")+'</td>'
       + '<td class="num">'+(x.ths_rank||"—")+'</td>'
       + '<td class="num '+cls+'">'+chg+'</td>'
+      + '<td class="num">'+rd+'</td>'
       + '<td class="cc">'+ESC((x.concepts||[]).slice(0,3).join(" · "))+'</td>'
       + '</tr>';
   }).join("") : '<tr><td colspan="6" style="color:var(--ink4)">本期无数据</td></tr>';
 
   const cs = ref.concepts||[];
   $("#conceptChips").innerHTML = cs.length ? cs.map(function(c){
-    return '<span class="c" title="'+ESC((c.stocks||[]).join("、"))+'">'+ESC(c.name)+'<i>'+c.count+'</i></span>';
+    const chg = (c.avg_chg==null) ? "" : '<i class="chg'+((c.avg_chg||0)<0?" down":"")+'">'
+      + ((c.avg_chg>0?"+":"")+c.avg_chg.toFixed(2)+"%")+'</i>';
+    const am = (c.assets&&c.assets.length) ? '<span class="tagx">'+c.assets.map(ESC).join("/")+'</span>' : '';
+    return '<span class="c" title="'+ESC((c.stocks||[]).join("、"))+'">'+ESC(c.name)+am+'<i>'+c.count+' 只</i>'+chg+'</span>';
   }).join("") : '<div class="hint">本期无概念数据</div>';
+
+  const tr = ref.trends||{};
+  $("#trendLine").innerHTML = tr.is_first
+    ? '<span class="chip line">首日快照：明天起解锁新进榜 / 掉榜 / 名次变化</span>'
+    : '<span class="chip line">较 '+(tr.prev_date||"上期")+'：新进榜 '+((tr.new_in||[]).length)
+      +' 只 · 掉榜 '+((tr.dropped||[]).length)+' 只 · 名次变动 '+(tr.moved||0)+' 只</span>';
 
   const xq = ref.xueqiu_posts||[];
   $("#xqList").innerHTML = xq.length ? xq.map(function(p,i){
@@ -665,6 +684,26 @@ function renderCandidates(d){
 }
 
 function renderEvents(d){
+  const brs = d.breakouts||[];
+  let html = "";
+  html += '<h2>抖音出圈事件 <span class="n">全网级信号，单独成层</span></h2>';
+  html += brs.length
+    ? '<table style="width:100%"><thead><tr><th>日期</th><th>词条</th><th style="width:44px">名次</th><th style="width:64px" class="num">热值</th><th>资产</th><th style="width:44px">连续</th></tr></thead><tbody>'
+      + brs.map(function(b){
+          const cls = (b.kind==="market") ? "badge gray" : "badge";
+          return '<tr><td>'+ESC(b.date)+'</td><td>'+ESC(b.word)+'</td>'
+            + '<td><span class="'+cls+'">#'+b.rank+'</span></td>'
+            + '<td class="num">'+Math.round((b.hot_value||0)/10000)+' 万</td>'
+            + '<td style="font-size:12px">'+ESC((b.assets||[]).join("、")||"—")+'</td>'
+            + '<td class="num">'+(b.days||1)+' 天</td></tr>';
+        }).join("") + '</tbody></table>'
+    : '<div class="hint">暂无出圈事件</div>';
+  html += '<h2 style="margin-top:26px">社媒侧事件 <span class="n">小红书车道，已放弃</span></h2>';
+  $("#events").innerHTML = html;
+  return;
+}
+
+function renderEventsLegacy(d){
   const ev = d.events_recent||[];
   if(!ev.length){
     $("#events").innerHTML = '<div class="empty"><h2>事件库还没有记录</h2><p>事件库只服务社媒侧（小红书）：热度≥80 连续 3 日 / 增速进历史前 5% / 新面孔 7 日内进 Top5。<br>该车道 2026-11-27 起暂停，恢复后重新积累。</p></div>';
