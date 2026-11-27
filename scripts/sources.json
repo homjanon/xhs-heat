@@ -8,7 +8,7 @@
   },
   "lanes": {
     "xhs": {
-      "enabled": true,
+      "enabled": false,
       "role": "主车道（深度）：开放式发现 + 固定追踪",
       "crawler": "自研轻量采集器（requests + xhshow 纯算法签名）",
       "crawler_repo": "",
@@ -85,7 +85,10 @@
         "concurrency": 1,
         "max_pages_per_keyword": 3,
         "fetch_window": "每日 16:05 Asia/Shanghai（与 douban 16:00 / xiaoxu 16:20 / cmb 16:30 错开）"
-      }
+      },
+      "status": "paused",
+      "status_note": "2026-11-27 起停采：账号收到官方「第三方工具自动浏览」违规预警，为避免封号，至少静默 14 天。不换号、不重试、不删笔记、不改资料（同设备指纹会关联新号）。",
+      "resume_plan": "恢复时先按「每周 2 次 × 6 个核心词」验证一周，无预警再逐步加量"
     },
     "reference": {
       "enabled": true,
@@ -817,5 +820,13 @@
     "daily_days": 365,
     "agg_days": 400,
     "push_days": 90
+  },
+  "copy": {
+    "title": "资产热度雷达",
+    "kicker": "ASSET HEAT RADAR",
+    "subtitle": "资金侧人气 × 社媒侧讨论 —— 两套口径，不做直接换算",
+    "reference_note": "主数据源维护中：当前展示资金侧人气与出圈信号",
+    "xhs_paused_note": "社媒侧（小红书）暂停采集中",
+    "metrics_note": "概念热度 = 两榜个股的概念标签聚合；双榜 = 东财与同花顺同时进 Top20"
   }
 }
