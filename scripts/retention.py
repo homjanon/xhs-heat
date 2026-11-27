@@ -28,7 +28,8 @@ from common import (DAILY_DIR, DATA_DIR, DOCS, INBOX_DIR, REPORT_DIR, load_confi
                     log)
 
 SAFE_ROOTS = (INBOX_DIR, REPORT_DIR, DAILY_DIR, os.path.join(DOCS, "push"),
-              os.path.join(DATA_DIR, "agg"))
+              os.path.join(DATA_DIR, "agg"), os.path.join(DATA_DIR, "douyin"),
+              os.path.join(DATA_DIR, "etf"))
 
 
 def _files(path, suffix=None):
@@ -125,6 +126,8 @@ def main(argv=None):
         (os.path.join(DOCS, "push"), "push_days", "push", ".txt"),
         (DAILY_DIR, "daily_days", "daily", ".json"),
         (os.path.join(DATA_DIR, "agg"), "agg_days", "agg", ".json"),
+        (os.path.join(DATA_DIR, "douyin"), "douyin_days", "douyin", ".json"),
+        (os.path.join(DATA_DIR, "etf"), "etf_days", "etf", ".json"),
     ):
         r, f = purge_by_age(path, int(st.get(key, 90)), suffix, dry, label)
         total_removed += r
